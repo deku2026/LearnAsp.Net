@@ -1,0 +1,35 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Step01_HostStartup/Step01_HostStartup.csproj" />
+    <Project Path="src/Step02_DIConfigOptions/Step02_DIConfigOptions.csproj" />
+    <Project Path="src/Step03_MiddlewarePipeline/Step03_MiddlewarePipeline.csproj" />
+    <Project Path="src/Step04_RoutingEndpoints/Step04_RoutingEndpoints.csproj" />
+    <Project Path="src/Step05_MinimalApiVsController/Step05_MinimalApiVsController.csproj" />
+    <Project Path="src/Step06_BindingValidationProblemDetails/Step06_BindingValidationProblemDetails.csproj" />
+    <Project Path="src/Step07_AuthnAuthzEntry/Step07_AuthnAuthzEntry.csproj" />
+    <Project Path="src/Step08_LoggingErrorsHealth/Step08_LoggingErrorsHealth.csproj" />
+    <Project Path="src/Step09_IntegrationTesting/Step09_IntegrationTesting.csproj" />
+    <Project Path="src/Step10_HttpFoundation/Step10_HttpFoundation.csproj" />
+    <Project Path="src/Part03_1_ApiDesign/Part03_1_ApiDesign.csproj" />
+    <Project Path="src/Part03_2_AppArchitecture/Part03_2_AppArchitecture.csproj" />
+    <Project Path="src/Part03_3_ProjectStructure/Part03_3_ProjectStructure.csproj" />
+    <Project Path="src/Part03_4_ArchTesting/Part03_4_ArchTesting.csproj" />
+    <Project Path="src/Part04_1_EFCore/Part04_1_EFCore.csproj" />
+    <Project Path="src/Part04_2_Caching/Part04_2_Caching.csproj" />
+    <Project Path="src/Part04_3_MultiTenant/Part04_3_MultiTenant.csproj" />
+    <Project Path="src/Part05_1_AuthnAuthz/Part05_1_AuthnAuthz.csproj" />
+    <Project Path="src/Part05_2_SpaAuth/Part05_2_SpaAuth.csproj" />
+    <Project Path="src/Part06_1_MessagingPatterns/Part06_1_MessagingPatterns.csproj" />
+    <Project Path="src/Part06_2_MessagingTools/Part06_2_MessagingTools.csproj" />
+    <Project Path="src/Part07_DistributedComm/Part07_DistributedComm.csproj" />
+    <Project Path="src/Part08_1_OpenTelemetry/Part08_1_OpenTelemetry.csproj" />
+    <Project Path="src/Part08_2_TroubleshootingProcess/Part08_2_TroubleshootingProcess.csproj" />
+    <Project Path="src/Part09_Deployment/Part09_Deployment.csproj" />
+    <Project Path="src/Part10_Aspire/Part10_Aspire.csproj" />
+    <Project Path="src/Part11_1_PerformanceAdvanced/Part11_1_PerformanceAdvanced.csproj" />
+    <Project Path="src/Part11_2_NativeAotTrim/Part11_2_NativeAotTrim.csproj" />
+    <Project Path="src/Part11_3_FrameworkSource/Part11_3_FrameworkSource.csproj" />
+    <Project Path="src/Part12_ElectiveBranches/Part12_ElectiveBranches.csproj" />
+    <Project Path="src/Part13_Summary/Part13_Summary.csproj" />
+  </Folder>
+</Solution>

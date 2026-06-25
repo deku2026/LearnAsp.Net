@@ -1,0 +1,21 @@
+{
+  "files.eol": "\n",
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true,
+    "artifacts": true,
+    "out": true,
+    "dist": true
+  },
+  "omnisharp.enableEditorConfigSupport": true,
+  "dotnet.defaultSolution": "LearnAspNet.slnx",
+  "editor.formatOnSave": true,
+  "[csharp]": {
+    "editor.defaultFormatter": "ms-dotnettools.csharp"
+  },
+  "rest-client.environmentVariables": {
+    "$shared": {
+      "host": "http://localhost"
+    }
+  }
+}

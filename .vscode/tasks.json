@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dotnet restore",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["restore", "LearnAspNet.slnx"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "dotnet build",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "LearnAspNet.slnx", "-c", "Debug"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "dotnet build (Release)",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "LearnAspNet.slnx", "-c", "Release"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "dotnet format",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["format", "LearnAspNet.slnx", "--verbosity", "minimal"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "watch current project",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["watch", "run", "--project", "${fileDirname}"],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}
