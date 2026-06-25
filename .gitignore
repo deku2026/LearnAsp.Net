@@ -1,0 +1,39 @@
+# Build outputs
+**/bin/
+**/obj/
+artifacts/
+build/
+out/
+dist/
+TestResults/
+.compiler-cache/
+
+# ASP.NET / .NET dev secrets and runtime junk
+*.user
+secrets.json
+appsettings.*.local.json
+**/*.dev.json
+*.pidb
+*.cache
+
+# IDE / editor
+.vs/
+.vscode/*.code-workspace
+.idea/
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+
+# Worktrees (git worktree add .worktree/<branch> lands here)
+.worktree/
+.worktrees/
+
+# Local AI assistant workspaces
+.claude/
+.cursor/
+
+# OS junk
+.DS_Store
+Thumbs.db
