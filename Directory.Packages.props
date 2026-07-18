@@ -33,6 +33,8 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
     <PackageVersion Include="Respawn" Version="7.0.0" />
     <PackageVersion Include="WireMock.Net" Version="2.12.0" />
+    <PackageVersion Include="Xunit.SkippableFact" Version="1.5.61" />
   </ItemGroup>
 </Project>
+
 

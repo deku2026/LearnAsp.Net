@@ -14,12 +14,14 @@ public sealed class IntegrationTests
 
     private void EnsurePg()
     {
-        Assert.True(
-            _fx.IsAvailable,
-            _fx.SkipReason ?? "PostgreSQL unavailable (start docker compose postgres or enable Docker for Testcontainers).");
+        // macOS/Windows GitHub runners have neither Docker nor local Postgres.
+        // Linux CI + local dev with Docker/PG still run these for real.
+        Skip.If(
+            !_fx.IsAvailable,
+            _fx.SkipReason ?? "PostgreSQL unavailable (Docker/Testcontainers or localhost:5432).");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Admin_course_section_student_enrollment_flow()
     {
         EnsurePg();
@@ -48,7 +50,7 @@ public sealed class IntegrationTests
         Assert.Contains(list, e => e.Id == enrollment.Id);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Validation_failure_is_400()
     {
         EnsurePg();
@@ -60,7 +62,7 @@ public sealed class IntegrationTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Anonymous_create_course_is_401()
     {
         EnsurePg();
@@ -71,7 +73,7 @@ public sealed class IntegrationTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Student_create_course_is_403()
     {
         EnsurePg();
@@ -82,7 +84,7 @@ public sealed class IntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Respawn_isolates_tests_empty_list()
     {
         EnsurePg();
