@@ -63,6 +63,9 @@ jobs:
       - name: Build (Release)
         run: dotnet build LearnAspNet.slnx -c Release --no-restore
 
+      - name: Test (Release)
+        run: dotnet test LearnAspNet.slnx -c Release --no-build --logger "trx;LogFilePrefix=linux"
+
       - name: Run pre-commit hooks
         run: |
           set +e

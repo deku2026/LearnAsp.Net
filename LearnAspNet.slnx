@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Campus.Contracts/Campus.Contracts.csproj" />
+    <Project Path="src/Campus.Testing/Campus.Testing.csproj" />
     <Project Path="src/Step01_HostStartup/Step01_HostStartup.csproj" />
     <Project Path="src/Step02_DIConfigOptions/Step02_DIConfigOptions.csproj" />
     <Project Path="src/Step03_MiddlewarePipeline/Step03_MiddlewarePipeline.csproj" />
@@ -31,5 +33,15 @@
     <Project Path="src/Part11_3_FrameworkSource/Part11_3_FrameworkSource.csproj" />
     <Project Path="src/Part12_ElectiveBranches/Part12_ElectiveBranches.csproj" />
     <Project Path="src/Part13_Summary/Part13_Summary.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Step01_HostStartup.Tests/Step01_HostStartup.Tests.csproj" />
+    <Project Path="tests/Step02_DIConfigOptions.Tests/Step02_DIConfigOptions.Tests.csproj" />
+    <Project Path="tests/Step03_MiddlewarePipeline.Tests/Step03_MiddlewarePipeline.Tests.csproj" />
+    <Project Path="tests/Step04_RoutingEndpoints.Tests/Step04_RoutingEndpoints.Tests.csproj" />
+    <Project Path="tests/Step05_MinimalApiVsController.Tests/Step05_MinimalApiVsController.Tests.csproj" />
+    <Project Path="tests/Step06_BindingValidationProblemDetails.Tests/Step06_BindingValidationProblemDetails.Tests.csproj" />
+    <Project Path="tests/Step07_AuthnAuthzEntry.Tests/Step07_AuthnAuthzEntry.Tests.csproj" />
+    <Project Path="tests/Step08_LoggingErrorsHealth.Tests/Step08_LoggingErrorsHealth.Tests.csproj" />
   </Folder>
 </Solution>
