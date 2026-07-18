@@ -25,6 +25,23 @@ public sealed class AuthTests : IClassFixture<CampusWebApplicationFactory<Progra
     }
 
     [Fact]
+    public async Task Fallback_policy_requires_auth_for_unprotected_endpoint()
+    {
+        // /api/v1/enrollments has no .RequireAuthorization() but fallback policy secures it.
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/enrollments");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AllowAnonymous_overrides_fallback_policy()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/enrollments/public-count");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Student_cannot_create_course()
     {
         var client = _factory.CreateClient().AsTestUser(role: "Student");

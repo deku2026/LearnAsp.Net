@@ -34,7 +34,8 @@ public sealed class PostgresFixture : IAsyncLifetime
             .Options;
         await using (var db = new CampusDbContext(efOptions))
         {
-            await db.Database.EnsureCreatedAsync();
+            // Migrations (not EnsureCreated): real schema + __EFMigrationsHistory.
+            await db.Database.MigrateAsync();
         }
 
         await using var respawnConn = new NpgsqlConnection(_connectionString);
@@ -43,6 +44,8 @@ public sealed class PostgresFixture : IAsyncLifetime
         {
             DbAdapter = DbAdapter.Postgres,
             SchemasToInclude = ["public"],
+            // Don't wipe migration history between tests.
+            TablesToIgnore = new Respawn.Graph.Table[] { new("__EFMigrationsHistory") },
         });
     }
 

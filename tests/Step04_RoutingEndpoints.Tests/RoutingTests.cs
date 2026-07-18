@@ -38,4 +38,25 @@ public sealed class RoutingTests : IClassFixture<CampusWebApplicationFactory<Pro
         Assert.False(string.IsNullOrWhiteSpace(href));
         Assert.Contains(id.ToString(), href, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Theory]
+    [InlineData("2026S1", HttpStatusCode.OK)]
+    [InlineData("2026F2", HttpStatusCode.OK)]
+    [InlineData("invalid", HttpStatusCode.NotFound)]
+    public async Task Custom_constraint_matches_term_codes(string term, HttpStatusCode expected)
+    {
+        var response = await _client.GetAsync($"/api/v1/sections/{term}");
+        Assert.Equal(expected, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Nested_group_inherits_prefix_and_filter()
+    {
+        // /api/v1/admin/stats — admin group inherits /api/v1 prefix + group filter header.
+        var response = await _client.GetAsync("/api/v1/admin/stats");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.Contains("X-Admin-Filter"));
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.GetProperty("totalCourses").GetInt32() >= 1);
+    }
 }

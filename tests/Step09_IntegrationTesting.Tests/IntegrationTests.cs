@@ -90,4 +90,27 @@ public sealed class IntegrationTests
             Assert.NotNull(list);
             Assert.Empty(list);
         });
+
+    [SkippableFact]
+    public async Task Migrations_history_table_exists_after_startup()
+    {
+        EnsurePg();
+        await using var conn = new Npgsql.NpgsqlConnection(_fx.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        // Postgres folds unquoted identifiers to lowercase.
+        cmd.CommandText = "SELECT COUNT(*) FROM __efmigrationshistory";
+        try
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0);
+            Assert.True(count >= 1, $"expected at least 1 migration row, got {count}");
+        }
+        catch (Npgsql.NpgsqlException ex) when (ex.Message.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
+        {
+            // Try quoted table name (EF creates it quoted).
+            cmd.CommandText = "SELECT COUNT(*) FROM \"__EFMigrationsHistory\"";
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0);
+            Assert.True(count >= 1, $"expected at least 1 migration row, got {count}");
+        }
+    }
 }

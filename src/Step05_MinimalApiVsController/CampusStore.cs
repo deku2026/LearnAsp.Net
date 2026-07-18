@@ -31,6 +31,9 @@ public sealed class CampusStore
 
     public CourseDto? GetCourse(Guid id) => _courses.GetValueOrDefault(id);
 
+    public CourseDto? FindByCode(string code) =>
+        _courses.Values.FirstOrDefault(c => string.Equals(c.Code, code, StringComparison.OrdinalIgnoreCase));
+
     public SectionDto AddSection(CreateSectionRequest request)
     {
         if (!_courses.ContainsKey(request.CourseId))

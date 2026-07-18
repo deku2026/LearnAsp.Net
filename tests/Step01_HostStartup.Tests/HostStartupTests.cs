@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Campus.Contracts;
 using Campus.Testing;
 
@@ -35,5 +36,37 @@ public sealed class HostStartupTests : IClassFixture<CampusWebApplicationFactory
     {
         var response = await _client.GetAsync("/heartbeat-count");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Heartbeat_increments_over_time_and_reports_scoped_id()
+    {
+        // Allow the hosted service to tick at least once.
+        await Task.Delay(1500);
+
+        var first = await _client.GetFromJsonAsync<JsonElement>("/heartbeat-count");
+        var firstCount = first.GetProperty("count").GetInt64();
+        var firstHasScoped = first.GetProperty("lastScopedId").ValueKind == JsonValueKind.String;
+        var firstScopedId = firstHasScoped ? first.GetProperty("lastScopedId").GetGuid() : Guid.Empty;
+
+        await Task.Delay(2200);
+
+        var second = await _client.GetFromJsonAsync<JsonElement>("/heartbeat-count");
+        var secondCount = second.GetProperty("count").GetInt64();
+        var secondHasScoped = second.GetProperty("lastScopedId").ValueKind == JsonValueKind.String;
+        var secondScopedId = secondHasScoped ? second.GetProperty("lastScopedId").GetGuid() : Guid.Empty;
+
+        Assert.True(secondCount > firstCount, $"expected second {secondCount} > first {firstCount}");
+        // Each tick creates a new scoped TickRecorder via IServiceScopeFactory — ids differ.
+        Assert.True(secondHasScoped, "second tick should have a scoped id");
+        Assert.True(firstHasScoped, "first tick should have a scoped id");
+        Assert.NotEqual(firstScopedId, secondScopedId);
+    }
+
+    [Fact]
+    public async Task Webroot_endpoint_returns_paths()
+    {
+        var info = await _client.GetFromJsonAsync<JsonElement>("/webroot");
+        Assert.False(string.IsNullOrWhiteSpace(info.GetProperty("contentRoot").GetString()));
     }
 }

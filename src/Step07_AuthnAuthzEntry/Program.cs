@@ -9,6 +9,7 @@ using System.Text;
 using Campus.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using Step07_AuthnAuthzEntry;
 
@@ -51,6 +52,10 @@ builder.Services
 
 builder.Services.AddAuthorization(options =>
 {
+    // Fallback policy: secure by default — all endpoints require auth unless [AllowAnonymous].
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
     options.AddPolicy("AdminOnly", p => p.RequireRole("Admin"));
     options.AddPolicy("CanEnroll", p => p.RequireRole("Student", "Admin"));
 });
@@ -62,7 +67,7 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/", () => Results.Ok(new { lab = "Step07_AuthnAuthzEntry" }));
+app.MapGet("/", () => Results.Ok(new { lab = "Step07_AuthnAuthzEntry" })).AllowAnonymous();
 
 app.MapGet("/me", (ClaimsPrincipal user) =>
 {
@@ -87,7 +92,7 @@ app.MapPost("/api/v1/enrollments", (CreateEnrollmentRequest request, ClaimsPrinc
     return Results.Created($"/api/v1/enrollments/{enrollment.Id}", enrollment);
 }).RequireAuthorization("CanEnroll");
 
-app.MapGet("/api/v1/enrollments/public-count", (EnrollmentBook book) => Results.Ok(new { count = book.Count }));
+app.MapGet("/api/v1/enrollments/public-count", (EnrollmentBook book) => Results.Ok(new { count = book.Count })).AllowAnonymous();
 
 app.MapPost("/token/dev", (DevTokenRequest body) =>
 {
@@ -103,7 +108,7 @@ app.MapPost("/token/dev", (DevTokenRequest body) =>
     };
     var token = new JwtSecurityToken(issuer, audience, claims, expires: DateTime.UtcNow.AddHours(2), signingCredentials: creds);
     return Results.Ok(new { access_token = new JwtSecurityTokenHandler().WriteToken(token) });
-});
+}).AllowAnonymous();
 
 app.Run();
 

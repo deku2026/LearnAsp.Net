@@ -6,6 +6,7 @@
 using System.Collections.Concurrent;
 using Campus.Contracts;
 using FluentValidation;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Step06_BindingValidationProblemDetails;
@@ -25,6 +26,7 @@ builder.Services.AddProblemDetails(options =>
     };
 });
 builder.Services.AddValidatorsFromAssemblyContaining<CreateSectionBodyValidator>();
+builder.Services.AddExceptionHandler<LabExceptionHandler>();
 builder.Services.AddSingleton<CourseBook>();
 
 var app = builder.Build();
@@ -36,14 +38,17 @@ app.MapGet("/", () => Results.Ok(new { lab = "Step06_BindingValidationProblemDet
 
 var api = app.MapGroup("/api/v1");
 
-api.MapPost("/courses", (CreateCourseBody body, CourseBook book) =>
+// Built-in validation (DataAnnotations + IValidatableObject + custom attribute) via AddValidation
+// Requires InterceptorsNamespaces in csproj — otherwise silent no-op.
+api.MapPost("/courses", ([FromBody] CreateCourseBody body, CourseBook book) =>
 {
+    // Built-in validation runs automatically via AddValidation() interceptors.
     var created = book.Add(body.Code, body.Title, body.Credits);
     return Results.Created($"/api/v1/courses/{created.Id}", created);
 });
 
 api.MapPost("/sections", async Task<Results<Created<SectionDto>, ValidationProblem, NotFound<ProblemDetails>>> (
-    CreateSectionBody body,
+    [FromBody] CreateSectionBody body,
     IValidator<CreateSectionBody> validator,
     CourseBook book,
     HttpContext http) =>
@@ -90,6 +95,17 @@ api.MapGet("/courses/{id:guid}", (Guid id, CourseBook book) =>
         : Results.Ok(c);
 });
 
+// Endpoint that throws to demonstrate IExceptionHandler → ProblemDetails
+api.MapGet("/throw/{kind}", (string kind) =>
+{
+    throw kind switch
+    {
+        "notfound" => new KeyNotFoundException("resource"),
+        "badarg" => new ArgumentException("bad input"),
+        _ => new InvalidOperationException("boom"),
+    };
+});
+
 app.Run();
 
 public partial class Program;
@@ -118,5 +134,37 @@ public sealed class CourseBook
         var dto = new SectionDto(Guid.NewGuid(), courseId, term.Trim(), capacity, capacity);
         _sections[dto.Id] = dto;
         return dto;
+    }
+}
+
+/// <summary>IExceptionHandler: maps exceptions to ProblemDetails with stable errorCode.</summary>
+public sealed class LabExceptionHandler(IHostEnvironment env)
+    : IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
+    {
+        var (status, errorCode, title) = exception switch
+        {
+            KeyNotFoundException => (StatusCodes.Status404NotFound, ErrorCodes.NotFound, "Not found"),
+            ArgumentException => (StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Bad request"),
+            _ => (StatusCodes.Status500InternalServerError, ErrorCodes.InternalError, "Internal error"),
+        };
+
+        httpContext.Items["errorCode"] = errorCode;
+        httpContext.Response.StatusCode = status;
+        httpContext.Response.ContentType = "application/problem+json";
+
+        var problem = new
+        {
+            type = $"https://httpstatuses.com/{status}",
+            title,
+            status,
+            detail = env.IsDevelopment() ? exception.Message : null,
+            errorCode,
+            traceId = httpContext.TraceIdentifier,
+        };
+
+        await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken);
+        return true;
     }
 }

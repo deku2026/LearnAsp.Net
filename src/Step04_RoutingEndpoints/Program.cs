@@ -4,9 +4,14 @@
 // Title : 路由与终结点
 
 using Campus.Contracts;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Routing;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<InMemoryCourseCatalog>();
+// Register custom IRouteConstraint
+builder.Services.Configure<RouteOptions>(o => o.ConstraintMap.Add("termcode", typeof(TermCodeConstraint)));
+
 var app = builder.Build();
 
 var catalog = app.Services.GetRequiredService<InMemoryCourseCatalog>();
@@ -32,6 +37,22 @@ api.MapGet("/courses/by-code/{code:regex(^[A-Z]{{2,8}}$)}", (string code, InMemo
         return course is null ? Results.NotFound() : Results.Ok(course);
     })
     .WithName("GetCourseByCode");
+
+// Custom IRouteConstraint: term codes like 2026S1, 2026F, 2027S2
+api.MapGet("/sections/{term:termcode}", (string term) => Results.Ok(new { term, valid = true }))
+    .WithName("GetSectionByTerm");
+
+// Nested MapGroup + group-level filter (demonstrates inheritance)
+var admin = api.MapGroup("/admin")
+    .WithTags("Admin")
+    .AddEndpointFilter(async (ctx, next) =>
+    {
+        ctx.HttpContext.Response.Headers["X-Admin-Filter"] = "applied";
+        return await next(ctx);
+    });
+
+admin.MapGet("/stats", (InMemoryCourseCatalog c) => Results.Ok(new { totalCourses = c.List().Count }))
+    .WithName("AdminStats");
 
 app.MapGet("/links/course/{id:guid}", (Guid id, LinkGenerator links, HttpContext http) =>
 {
@@ -59,4 +80,26 @@ public sealed class InMemoryCourseCatalog
 
     public CourseDto? FindByCode(string code) =>
         _courses.Values.FirstOrDefault(c => string.Equals(c.Code, code, StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>Custom IRouteConstraint: matches term codes like 2026S1, 2026F, 2027S2 (YYYY + S/F + digit).</summary>
+public sealed class TermCodeConstraint : IRouteConstraint
+{
+    private static readonly System.Text.RegularExpressions.Regex Pattern =
+        new(@"^\d{4}[SFsf]\d$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public bool Match(
+        HttpContext? httpContext,
+        IRouter? route,
+        string routeKey,
+        RouteValueDictionary values,
+        RouteDirection routeDirection)
+    {
+        if (values.TryGetValue(routeKey, out var value) && value is string s)
+        {
+            return Pattern.IsMatch(s);
+        }
+
+        return false;
+    }
 }

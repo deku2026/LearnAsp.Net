@@ -32,7 +32,8 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CampusDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    // Use migrations (not EnsureCreated) so schema matches production and __EFMigrationsHistory is present.
+    await db.Database.MigrateAsync();
 }
 
 app.UseAuthentication();
