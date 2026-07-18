@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using System.Net.Sockets;
 using Campus.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -9,41 +8,49 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Part04_1_EFCore;
+using Part04_2_Caching;
 
-namespace Part04_1_EFCore.Tests;
+namespace Part04_2_Caching.Tests;
 
-public sealed class PgFixture : IAsyncLifetime
+public sealed class CacheFixture : IAsyncLifetime
 {
-    public string ConnectionString { get; private set; } = "";
+    public string PgConnectionString { get; private set; } = "";
     public bool IsAvailable { get; private set; }
     public string? SkipReason { get; private set; }
 
+    private bool _migrated;
+
     public async Task InitializeAsync()
     {
-        ConnectionString = Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
-                           ?? "Host=localhost;Port=5432;Database=campus_w5_test;Username=dotnet;Password=dotnet_dev";
+        // Use unique env var per test project, fallback to CAMPUS_TEST_PG base, then default.
+        PgConnectionString = Environment.GetEnvironmentVariable("CAMPUS_CACHE_TEST_PG")
+                             ?? Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
+                             ?? "Host=localhost;Port=5432;Database=campus_cache_test;Username=dotnet;Password=dotnet_dev";
         try
         {
-            await EnsureDatabaseExistsAsync(ConnectionString);
-            await using var conn = new NpgsqlConnection(ConnectionString);
+            await EnsureDatabaseExistsAsync(PgConnectionString);
+            await using var conn = new NpgsqlConnection(PgConnectionString);
             await conn.OpenAsync();
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT 1";
             await cmd.ExecuteScalarAsync();
-            // Migrate once at fixture init — tests use TRUNCATE for fast reset.
-            var options = new DbContextOptionsBuilder<CampusDbContext>()
-                .UseNpgsql(ConnectionString).Options;
-            await using var db = new CampusDbContext(options);
-            try
+            // Migrate once — if tables exist from a previous run, drop and recreate.
+            var options = new DbContextOptionsBuilder<CacheDbContext>()
+                .UseNpgsql(PgConnectionString).Options;
+            await using (var db = new CacheDbContext(options))
             {
-                await db.Database.MigrateAsync();
+                try
+                {
+                    await db.Database.MigrateAsync();
+                }
+                catch (NpgsqlException)
+                {
+                    // Stale schema — drop and retry
+                    await db.Database.EnsureDeletedAsync();
+                    await db.Database.MigrateAsync();
+                }
             }
-            catch (NpgsqlException)
-            {
-                await db.Database.EnsureDeletedAsync();
-                await db.Database.MigrateAsync();
-            }
+            _migrated = true;
             IsAvailable = true;
         }
         catch (NpgsqlException ex)
@@ -51,7 +58,7 @@ public sealed class PgFixture : IAsyncLifetime
             IsAvailable = false;
             SkipReason = $"PostgreSQL unavailable: {ex.Message}";
         }
-        catch (SocketException ex)
+        catch (System.Net.Sockets.SocketException ex)
         {
             IsAvailable = false;
             SkipReason = $"Socket: {ex.Message}";
@@ -64,12 +71,18 @@ public sealed class PgFixture : IAsyncLifetime
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
-            b.UseSetting("ConnectionStrings:Campus", ConnectionString);
+            b.UseSetting("ConnectionStrings:Campus", PgConnectionString);
+            b.UseSetting("ConnectionStrings:Redis", "127.0.0.1:6380,abortConnect=false");
+            // Disable Redis L2 in tests (WSL2 network quirks; HybridCache L1 still works).
+            // Redis resilience tests run separately on Linux CI with Docker.
+            b.UseSetting("Cache:UseRedisL2", "false");
             b.ConfigureAppConfiguration((_, cfg) =>
             {
                 cfg.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:Campus"] = ConnectionString,
+                    ["ConnectionStrings:Campus"] = PgConnectionString,
+                    ["ConnectionStrings:Redis"] = "127.0.0.1:6380,abortConnect=false",
+                    ["Cache:UseRedisL2"] = "false",
                 });
             });
         });
@@ -78,11 +91,11 @@ public sealed class PgFixture : IAsyncLifetime
     public async Task ResetDatabaseAsync()
     {
         if (!IsAvailable) return;
-        // Fast reset: TRUNCATE all tables (saves ~37s vs drop+migrate per test).
-        await using var conn = new NpgsqlConnection(ConnectionString);
+        // Fast reset: TRUNCATE instead of drop+migrate (saves ~37s per test).
+        await using var conn = new NpgsqlConnection(PgConnectionString);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "TRUNCATE TABLE attendance_records, enrollments, sections, courses RESTART IDENTITY CASCADE";
+        cmd.CommandText = "TRUNCATE TABLE courses RESTART IDENTITY CASCADE";
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -106,12 +119,12 @@ public sealed class PgFixture : IAsyncLifetime
     }
 }
 
-[CollectionDefinition("pg")]
-public sealed class PgCollection : ICollectionFixture<PgFixture> { }
+[CollectionDefinition("cache")]
+public sealed class CacheCollection : ICollectionFixture<CacheFixture> { }
 
-public static class Skip
+public static class CacheSkip
 {
-    public static void IfNotAvailable(PgFixture fx)
+    public static void IfNotAvailable(CacheFixture fx)
     {
         if (!fx.IsAvailable)
             global::Xunit.Skip.If(fx.SkipReason is not null, fx.SkipReason ?? "PostgreSQL unavailable");
