@@ -1,8 +1,3 @@
-// LearnAspNet
-// Doc   : ASP.NetStudy/步骤8-日志-错误处理-健康检查-完整实施指南.md
-// Part  : Step08 · LoggingErrorsHealth
-// Title : 日志 · 错误处理 · 健康检查
-
 using Campus.Contracts;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -44,9 +39,21 @@ try
         };
     });
 
-    builder.Services.AddHealthChecks()
-        .AddCheck("self", () => HealthCheckResult.Healthy("process up"), tags: ["live"])
-        .AddCheck<CampusReadinessHealthCheck>("campus-ready", tags: ["ready"]);
+    // Real DB readiness check: tries to open a Npgsql connection (configurable).
+    // Falls back to the gate if no connection string is configured (dev-only).
+    var pgCs = builder.Configuration.GetConnectionString("Postgres");
+    if (!string.IsNullOrWhiteSpace(pgCs))
+    {
+        builder.Services.AddHealthChecks()
+            .AddCheck("self", () => HealthCheckResult.Healthy("process up"), tags: ["live"])
+            .AddNpgSql(pgCs, healthQuery: "SELECT 1", name: "postgres-ready", tags: ["ready"]);
+    }
+    else
+    {
+        builder.Services.AddHealthChecks()
+            .AddCheck("self", () => HealthCheckResult.Healthy("process up"), tags: ["live"])
+            .AddCheck<CampusReadinessHealthCheck>("campus-ready", tags: ["ready"]);
+    }
 
     var app = builder.Build();
 
@@ -150,5 +157,15 @@ namespace Step08_LoggingErrorsHealth
 
             return true;
         }
+    }
+
+    // [LoggerMessage] source generator: zero-allocation structured logging for hot paths.
+    public static partial class LoggerMessages
+    {
+        [LoggerMessage(EventId = 1001, Level = LogLevel.Error, Message = "Unhandled exception at {Path}")]
+        public static partial void LogUnhandled(Microsoft.Extensions.Logging.ILogger logger, string path);
+
+        [LoggerMessage(EventId = 1002, Level = LogLevel.Information, Message = "Boom endpoint hit")]
+        public static partial void LogBoom(Microsoft.Extensions.Logging.ILogger logger);
     }
 }
