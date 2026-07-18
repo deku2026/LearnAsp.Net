@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<HeartbeatHostedService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<HeartbeatHostedService>());
+builder.Services.AddScoped<TickRecorder>();
 
 var app = builder.Build();
 
@@ -21,7 +22,17 @@ app.MapGet("/env", (IHostEnvironment env, IConfiguration config) =>
     return Results.Ok(info);
 });
 
-app.MapGet("/heartbeat-count", (HeartbeatHostedService hb) => Results.Ok(new { count = hb.TickCount }));
+app.MapGet("/heartbeat-count", (HeartbeatHostedService hb) => Results.Ok(new
+{
+    count = hb.TickCount,
+    lastScopedId = hb.LastScopedId,
+}));
+
+app.MapGet("/webroot", (IWebHostEnvironment env) => Results.Ok(new
+{
+    webRoot = env.WebRootPath ?? "(null)",
+    contentRoot = env.ContentRootPath,
+}));
 
 app.Run();
 
