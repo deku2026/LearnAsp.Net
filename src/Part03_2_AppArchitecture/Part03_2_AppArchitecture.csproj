@@ -1,2 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\Part03_2_Catalog.Contracts\Part03_2_Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\Part03_2_Catalog\Part03_2_Catalog.csproj" />
+    <ProjectReference Include="..\Part03_2_Enrollment.Contracts\Part03_2_Enrollment.Contracts.csproj" />
+    <ProjectReference Include="..\Part03_2_Enrollment\Part03_2_Enrollment.csproj" />
+    <ProjectReference Include="..\Part03_2_Notices.Contracts\Part03_2_Notices.Contracts.csproj" />
+    <ProjectReference Include="..\Part03_2_Notices\Part03_2_Notices.csproj" />
+    <ProjectReference Include="..\Part03_2_BuildingBlocks\Part03_2_BuildingBlocks.csproj" />
+  </ItemGroup>
 </Project>

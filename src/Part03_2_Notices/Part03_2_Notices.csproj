@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Part03_2.Notices</RootNamespace>
+    <AssemblyName>Part03_2.Notices</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Part03_2_Notices.Contracts\Part03_2_Notices.Contracts.csproj" />
+    <ProjectReference Include="..\Part03_2_Enrollment.Contracts\Part03_2_Enrollment.Contracts.csproj" />
+    <ProjectReference Include="..\Part03_2_BuildingBlocks\Part03_2_BuildingBlocks.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+</Project>
