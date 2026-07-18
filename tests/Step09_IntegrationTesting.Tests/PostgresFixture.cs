@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -21,44 +23,9 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // 1) Prefer Testcontainers when Docker works
-        try
+        if (!await TryStartTestcontainerAsync() && !await TryConnectLocalPostgresAsync())
         {
-            _container = new PostgreSqlBuilder("postgres:18.4-alpine")
-                .WithDatabase("campus_step09_it")
-                .WithUsername("dotnet")
-                .WithPassword("dotnet_dev")
-                .Build();
-            await _container.StartAsync();
-            _connectionString = _container.GetConnectionString();
-            IsAvailable = true;
-        }
-        catch (Exception ex)
-        {
-            // 2) Fallback: existing local stack (WSL docker-compose on localhost:5432)
-            var fallback = Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
-                           ?? "Host=localhost;Port=5432;Database=campus_step09_it;Username=dotnet;Password=dotnet_dev";
-            try
-            {
-                await EnsureDatabaseExistsAsync(fallback);
-                await using var conn = new NpgsqlConnection(fallback);
-                await conn.OpenAsync();
-                await using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT 1";
-                    await cmd.ExecuteScalarAsync();
-                }
-
-                _connectionString = fallback;
-                IsAvailable = true;
-            }
-            catch (Exception fallbackEx)
-            {
-                IsAvailable = false;
-                SkipReason =
-                    $"PostgreSQL unavailable for integration tests. Testcontainers: {ex.GetType().Name}: {ex.Message}; Fallback: {fallbackEx.Message}";
-                return;
-            }
+            return;
         }
 
         var efOptions = new DbContextOptionsBuilder<CampusDbContext>()
@@ -78,12 +45,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         });
     }
 
-    public WebApplicationFactory<Program> CreateFactory()
+    public async Task UsingFactoryAsync(Func<WebApplicationFactory<Program>, Task> test)
     {
-        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
-            // UseSetting is applied early enough for top-level Program configuration reads.
             builder.UseSetting("ConnectionStrings:Postgres", _connectionString);
             builder.ConfigureAppConfiguration((_, config) =>
             {
@@ -93,6 +59,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                 });
             });
         });
+        await test(factory);
     }
 
     public async Task ResetAsync()
@@ -109,7 +76,6 @@ public sealed class PostgresFixture : IAsyncLifetime
             await _respawner.ResetAsync(conn);
         }
 
-        // Guarantee empty tables even if Respawn mapping misses a relation
         await using var wipe = new NpgsqlConnection(_connectionString);
         await wipe.OpenAsync();
         await using var cmd = wipe.CreateCommand();
@@ -124,6 +90,113 @@ public sealed class PostgresFixture : IAsyncLifetime
             await _container.DisposeAsync();
         }
     }
+
+    private async Task<bool> TryStartTestcontainerAsync()
+    {
+        try
+        {
+            _container = new PostgreSqlBuilder("postgres:18.4-alpine")
+                .WithDatabase("campus_step09_it")
+                .WithUsername("dotnet")
+                .WithPassword("dotnet_dev")
+                .Build();
+            await _container.StartAsync();
+            _connectionString = _container.GetConnectionString();
+            IsAvailable = true;
+            return true;
+        }
+        catch (DockerUnavailableException ex)
+        {
+            SkipReason = $"Testcontainers Docker unavailable: {ex.Message}";
+            _container = null;
+            return false;
+        }
+        catch (TimeoutException ex)
+        {
+            SkipReason = $"Testcontainers timed out: {ex.Message}";
+            _container = null;
+            return false;
+        }
+        catch (InvalidOperationException ex)
+        {
+            SkipReason = $"Testcontainers invalid operation: {ex.Message}";
+            _container = null;
+            return false;
+        }
+        catch (IOException ex)
+        {
+            SkipReason = $"Testcontainers IO failure: {ex.Message}";
+            _container = null;
+            return false;
+        }
+        catch (SocketException ex)
+        {
+            SkipReason = $"Testcontainers socket failure: {ex.Message}";
+            _container = null;
+            return false;
+        }
+        catch (ArgumentException ex)
+        {
+            SkipReason = $"Testcontainers configuration error: {ex.Message}";
+            _container = null;
+            return false;
+        }
+    }
+
+    private async Task<bool> TryConnectLocalPostgresAsync()
+    {
+        var fallback = Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
+                       ?? "Host=localhost;Port=5432;Database=campus_step09_it;Username=dotnet;Password=dotnet_dev";
+        try
+        {
+            await EnsureDatabaseExistsAsync(fallback);
+            await using var conn = new NpgsqlConnection(fallback);
+            await conn.OpenAsync();
+            await using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT 1";
+                await cmd.ExecuteScalarAsync();
+            }
+
+            _connectionString = fallback;
+            IsAvailable = true;
+            SkipReason = null;
+            return true;
+        }
+        catch (NpgsqlException ex)
+        {
+            IsAvailable = false;
+            SkipReason = AppendFallback(SkipReason, $"local Postgres Npgsql: {ex.Message}");
+            return false;
+        }
+        catch (SocketException ex)
+        {
+            IsAvailable = false;
+            SkipReason = AppendFallback(SkipReason, $"local Postgres socket: {ex.Message}");
+            return false;
+        }
+        catch (TimeoutException ex)
+        {
+            IsAvailable = false;
+            SkipReason = AppendFallback(SkipReason, $"local Postgres timeout: {ex.Message}");
+            return false;
+        }
+        catch (InvalidOperationException ex)
+        {
+            IsAvailable = false;
+            SkipReason = AppendFallback(SkipReason, $"local Postgres invalid op: {ex.Message}");
+            return false;
+        }
+        catch (IOException ex)
+        {
+            IsAvailable = false;
+            SkipReason = AppendFallback(SkipReason, $"local Postgres IO: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string AppendFallback(string? prior, string detail)
+        => string.IsNullOrWhiteSpace(prior) ? detail : $"{prior}; Fallback: {detail}";
 
     private static async Task EnsureDatabaseExistsAsync(string connectionString)
     {
@@ -149,7 +222,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
 
         await using var create = conn.CreateCommand();
-        create.CommandText = $"CREATE DATABASE \"{dbName.Replace("\"", "\"\"")}\"";
+        create.CommandText = $"CREATE DATABASE \"{dbName.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         await create.ExecuteNonQueryAsync();
     }
 }

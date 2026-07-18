@@ -36,53 +36,51 @@ public sealed class HttpFoundationTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private WebApplicationFactory<Program> CreateFactory()
+    private async Task WithFactoryAsync(Func<HttpClient, Task> test)
     {
         var baseUrl = _wireMock.Url!.TrimEnd('/') + "/";
-        return new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseSetting("ExternalCatalog:BaseUrl", baseUrl);
         });
+        var client = factory.CreateClient();
+        await test(client);
     }
 
     [Fact]
-    public async Task Kestrel_limits_endpoint_reports_configured_values()
-    {
-        await using var factory = CreateFactory();
-        var client = factory.CreateClient();
-        var json = await client.GetFromJsonAsync<JsonElement>("/kestrel-limits");
-        Assert.Equal(256, json.GetProperty("maxConcurrentConnections").GetInt32());
-        Assert.Equal(65536, json.GetProperty("maxRequestBodyBytes").GetInt64());
-    }
+    public Task Kestrel_limits_endpoint_reports_configured_values()
+        => WithFactoryAsync(async client =>
+        {
+            var json = await client.GetFromJsonAsync<JsonElement>("/kestrel-limits");
+            Assert.Equal(256, json.GetProperty("maxConcurrentConnections").GetInt32());
+            Assert.Equal(65536, json.GetProperty("maxRequestBodyBytes").GetInt64());
+        });
 
     [Fact]
-    public async Task Proxy_catalog_returns_external_payload()
-    {
-        await using var factory = CreateFactory();
-        var client = factory.CreateClient();
-        var response = await client.GetAsync("/proxy/catalog/CS101");
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.True(response.IsSuccessStatusCode, body);
-        var json = JsonDocument.Parse(body).RootElement;
-        Assert.Equal("CS101", json.GetProperty("code").GetString());
-        Assert.Equal("wiremock", json.GetProperty("provider").GetString());
-    }
+    public Task Proxy_catalog_returns_external_payload()
+        => WithFactoryAsync(async client =>
+        {
+            var response = await client.GetAsync("/proxy/catalog/CS101");
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(response.IsSuccessStatusCode, body);
+            var json = JsonDocument.Parse(body).RootElement;
+            Assert.Equal("CS101", json.GetProperty("code").GetString());
+            Assert.Equal("wiremock", json.GetProperty("provider").GetString());
+        });
 
     [Fact]
-    public async Task Proxy_catalog_not_found()
-    {
-        await using var factory = CreateFactory();
-        var client = factory.CreateClient();
-        var response = await client.GetAsync("/proxy/catalog/MISSING");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
+    public Task Proxy_catalog_not_found()
+        => WithFactoryAsync(async client =>
+        {
+            var response = await client.GetAsync("/proxy/catalog/MISSING");
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        });
 
     [Fact]
-    public async Task Client_info_endpoint_ok()
-    {
-        await using var factory = CreateFactory();
-        var client = factory.CreateClient();
-        var response = await client.GetAsync("/client-info");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
+    public Task Client_info_endpoint_ok()
+        => WithFactoryAsync(async client =>
+        {
+            var response = await client.GetAsync("/client-info");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        });
 }
