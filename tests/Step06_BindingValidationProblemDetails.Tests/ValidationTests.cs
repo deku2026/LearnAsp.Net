@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Campus.Contracts;
 using Campus.Testing;
-using Step06_BindingValidationProblemDetails;
 
 namespace Step06_BindingValidationProblemDetails.Tests;
 
