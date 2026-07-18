@@ -43,5 +43,8 @@
     <Project Path="tests/Step06_BindingValidationProblemDetails.Tests/Step06_BindingValidationProblemDetails.Tests.csproj" />
     <Project Path="tests/Step07_AuthnAuthzEntry.Tests/Step07_AuthnAuthzEntry.Tests.csproj" />
     <Project Path="tests/Step08_LoggingErrorsHealth.Tests/Step08_LoggingErrorsHealth.Tests.csproj" />
+    <Project Path="tests/Step09_IntegrationTesting.Tests/Step09_IntegrationTesting.Tests.csproj" />
+    <Project Path="tests/Step10_HttpFoundation.Tests/Step10_HttpFoundation.Tests.csproj" />
   </Folder>
 </Solution>
+
