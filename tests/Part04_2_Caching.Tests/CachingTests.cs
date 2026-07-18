@@ -15,7 +15,7 @@ public sealed class CachingTests
 
     private void EnsurePg() => CacheSkip.IfNotAvailable(_fx);
 
-    [Fact]
+    [SkippableFact]
     public async Task HybridCache_returns_cached_value_on_second_call()
     {
         EnsurePg();
@@ -42,7 +42,7 @@ public sealed class CachingTests
         Assert.Equal(d1.GetProperty("code").GetString(), d2.GetProperty("code").GetString());
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task HybridCache_tag_invalidation_evicts_cache()
     {
         EnsurePg();
@@ -71,7 +71,7 @@ public sealed class CachingTests
         // in same process — the write-through path is verified by the PUT returning new value).
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task MemoryCache_demo_returns_data_from_db_first_time()
     {
         EnsurePg();
@@ -93,7 +93,7 @@ public sealed class CachingTests
         // IMemoryCache is demonstrated; cross-request persistence depends on host lifecycle.
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Stampede_concurrent_requests_share_single_db_call()
     {
         EnsurePg();
@@ -115,7 +115,7 @@ public sealed class CachingTests
         Assert.True(responses.All(r => r.StatusCode == HttpStatusCode.OK));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Output_cache_sections_returns_cached_response()
     {
         EnsurePg();
@@ -135,7 +135,7 @@ public sealed class CachingTests
         Assert.Equal(t1, t2);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Output_cache_eviction_returns_new_response()
     {
         EnsurePg();
@@ -156,7 +156,7 @@ public sealed class CachingTests
         Assert.NotEqual(t1, t2);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Penetration_caches_null_result()
     {
         EnsurePg();
