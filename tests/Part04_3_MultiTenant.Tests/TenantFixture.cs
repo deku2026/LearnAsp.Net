@@ -91,8 +91,7 @@ public sealed class TenantFixture : IAsyncLifetime
 
     public WebApplicationFactory<Program> CreateFactory(string? tenantId = null)
     {
-        var factory = new WebApplicationFactory<Program>();
-        return factory.WithWebHostBuilder(b =>
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseSetting("ConnectionStrings:Campus", ConnectionString);
             b.ConfigureAppConfiguration((_, cfg) =>

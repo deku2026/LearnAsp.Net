@@ -90,8 +90,7 @@ public sealed class CacheFixture : IAsyncLifetime
 
     public WebApplicationFactory<Program> CreateFactory()
     {
-        var factory = new WebApplicationFactory<Program>();
-        return factory.WithWebHostBuilder(b =>
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseSetting("ConnectionStrings:Campus", PgConnectionString);
             b.UseSetting("ConnectionStrings:Redis", "127.0.0.1:6380,abortConnect=false");
