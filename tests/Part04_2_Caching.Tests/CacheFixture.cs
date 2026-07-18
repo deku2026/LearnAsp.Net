@@ -1,71 +1,83 @@
-using System.Net;
-using System.Net.Http.Json;
-using System.Text.Json;
+using System.Net.Sockets;
 using Campus.Testing;
+using Docker.DotNet;
+using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Part04_2_Caching;
+using Testcontainers.PostgreSql;
 
 namespace Part04_2_Caching.Tests;
 
 public sealed class CacheFixture : IAsyncLifetime
 {
+    private PostgreSqlContainer? _container;
+
     public string PgConnectionString { get; private set; } = "";
     public bool IsAvailable { get; private set; }
     public string? SkipReason { get; private set; }
 
-    private bool _migrated;
-
     public async Task InitializeAsync()
     {
-        // Use unique env var per test project, fallback to CAMPUS_TEST_PG base, then default.
-        PgConnectionString = Environment.GetEnvironmentVariable("CAMPUS_CACHE_TEST_PG")
-                             ?? Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
-                             ?? "Host=localhost;Port=5432;Database=campus_cache_test;Username=dotnet;Password=dotnet_dev";
+        // 1) Try Testcontainers
         try
         {
-            await EnsureDatabaseExistsAsync(PgConnectionString);
-            await using var conn = new NpgsqlConnection(PgConnectionString);
-            await conn.OpenAsync();
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT 1";
-            await cmd.ExecuteScalarAsync();
-            // Migrate once — if tables exist from a previous run, drop and recreate.
+            _container = new PostgreSqlBuilder("postgres:18.4-alpine")
+                .WithDatabase("campus_cache_test")
+                .WithUsername("dotnet")
+                .WithPassword("dotnet_dev")
+                .Build();
+            await _container.StartAsync();
+            PgConnectionString = _container.GetConnectionString();
+        }
+        catch (DockerUnavailableException ex) { SkipReason = $"Docker: {ex.Message}"; _container = null; }
+        catch (DockerImageNotFoundException ex) { SkipReason = $"Image: {ex.Message}"; _container = null; }
+        catch (DockerApiException ex) { SkipReason = $"Docker API: {ex.Message}"; _container = null; }
+        catch (TimeoutException ex) { SkipReason = $"Timeout: {ex.Message}"; _container = null; }
+        catch (IOException ex) { SkipReason = $"IO: {ex.Message}"; _container = null; }
+        catch (SocketException ex) { SkipReason = $"Socket: {ex.Message}"; _container = null; }
+        catch (HttpRequestException ex) { SkipReason = $"HTTP: {ex.Message}"; _container = null; }
+
+        // 2) Fallback: local PG
+        if (_container is null)
+        {
+            PgConnectionString = Environment.GetEnvironmentVariable("CAMPUS_CACHE_TEST_PG")
+                                 ?? Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
+                                 ?? "Host=localhost;Port=5432;Database=campus_cache_test;Username=dotnet;Password=dotnet_dev";
+            try
+            {
+                await EnsureDatabaseExistsAsync(PgConnectionString);
+                await using var conn = new NpgsqlConnection(PgConnectionString);
+                await conn.OpenAsync();
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT 1";
+                await cmd.ExecuteScalarAsync();
+                SkipReason = null;
+            }
+            catch (NpgsqlException ex) { IsAvailable = false; SkipReason = $"PG: {ex.Message}"; return; }
+            catch (SocketException ex) { IsAvailable = false; SkipReason = $"Socket: {ex.Message}"; return; }
+        }
+
+        // 3) Migrate
+        try
+        {
             var options = new DbContextOptionsBuilder<CacheDbContext>()
                 .UseNpgsql(PgConnectionString).Options;
-            await using (var db = new CacheDbContext(options))
-            {
-                try
-                {
-                    await db.Database.MigrateAsync();
-                }
-                catch (NpgsqlException)
-                {
-                    // Stale schema — drop and retry
-                    await db.Database.EnsureDeletedAsync();
-                    await db.Database.MigrateAsync();
-                }
-            }
-            _migrated = true;
+            await using var db = new CacheDbContext(options);
+            try { await db.Database.MigrateAsync(); }
+            catch (NpgsqlException) { await db.Database.EnsureDeletedAsync(); await db.Database.MigrateAsync(); }
             IsAvailable = true;
         }
-        catch (NpgsqlException ex)
-        {
-            IsAvailable = false;
-            SkipReason = $"PostgreSQL unavailable: {ex.Message}";
-        }
-        catch (System.Net.Sockets.SocketException ex)
-        {
-            IsAvailable = false;
-            SkipReason = $"Socket: {ex.Message}";
-        }
+        catch (Exception ex) { IsAvailable = false; SkipReason = $"Migration: {ex.Message}"; }
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async Task DisposeAsync()
+    {
+        if (_container is not null) await _container.DisposeAsync();
+    }
 
     public WebApplicationFactory<Program> CreateFactory()
     {
@@ -73,8 +85,6 @@ public sealed class CacheFixture : IAsyncLifetime
         {
             b.UseSetting("ConnectionStrings:Campus", PgConnectionString);
             b.UseSetting("ConnectionStrings:Redis", "127.0.0.1:6380,abortConnect=false");
-            // Disable Redis L2 in tests (WSL2 network quirks; HybridCache L1 still works).
-            // Redis resilience tests run separately on Linux CI with Docker.
             b.UseSetting("Cache:UseRedisL2", "false");
             b.ConfigureAppConfiguration((_, cfg) =>
             {
@@ -91,7 +101,6 @@ public sealed class CacheFixture : IAsyncLifetime
     public async Task ResetDatabaseAsync()
     {
         if (!IsAvailable) return;
-        // Fast reset: TRUNCATE instead of drop+migrate (saves ~37s per test).
         await using var conn = new NpgsqlConnection(PgConnectionString);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
