@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Campus.Contracts</RootNamespace>
+    <AssemblyName>Campus.Contracts</AssemblyName>
+  </PropertyGroup>
+</Project>
