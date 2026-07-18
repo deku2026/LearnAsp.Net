@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using Docker.DotNet;
 using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -107,40 +108,48 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
         catch (DockerUnavailableException ex)
         {
-            SkipReason = $"Testcontainers Docker unavailable: {ex.Message}";
-            _container = null;
-            return false;
+            return FailContainer($"Testcontainers Docker unavailable: {ex.Message}");
+        }
+        catch (DockerImageNotFoundException ex)
+        {
+            // Windows CI may expose Docker without the requested image / pull rights.
+            return FailContainer($"Testcontainers image missing: {ex.Message}");
+        }
+        catch (DockerApiException ex)
+        {
+            return FailContainer($"Testcontainers Docker API error: {ex.Message}");
         }
         catch (TimeoutException ex)
         {
-            SkipReason = $"Testcontainers timed out: {ex.Message}";
-            _container = null;
-            return false;
+            return FailContainer($"Testcontainers timed out: {ex.Message}");
         }
         catch (InvalidOperationException ex)
         {
-            SkipReason = $"Testcontainers invalid operation: {ex.Message}";
-            _container = null;
-            return false;
+            return FailContainer($"Testcontainers invalid operation: {ex.Message}");
         }
         catch (IOException ex)
         {
-            SkipReason = $"Testcontainers IO failure: {ex.Message}";
-            _container = null;
-            return false;
+            return FailContainer($"Testcontainers IO failure: {ex.Message}");
         }
         catch (SocketException ex)
         {
-            SkipReason = $"Testcontainers socket failure: {ex.Message}";
-            _container = null;
-            return false;
+            return FailContainer($"Testcontainers socket failure: {ex.Message}");
         }
         catch (ArgumentException ex)
         {
-            SkipReason = $"Testcontainers configuration error: {ex.Message}";
-            _container = null;
-            return false;
+            return FailContainer($"Testcontainers configuration error: {ex.Message}");
         }
+        catch (HttpRequestException ex)
+        {
+            return FailContainer($"Testcontainers HTTP failure: {ex.Message}");
+        }
+    }
+
+    private bool FailContainer(string reason)
+    {
+        SkipReason = reason;
+        _container = null;
+        return false;
     }
 
     private async Task<bool> TryConnectLocalPostgresAsync()
