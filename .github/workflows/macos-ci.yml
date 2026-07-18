@@ -1,10 +1,8 @@
 name: macOS CI
 
+# Linux CI is the required gate (Testcontainers/Docker). macOS kept for manual runs only.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

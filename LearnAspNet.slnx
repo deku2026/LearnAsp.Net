@@ -14,6 +14,9 @@
     <Project Path="src/Step10_HttpFoundation/Step10_HttpFoundation.csproj" />
     <Project Path="src/Part03_1_ApiDesign/Part03_1_ApiDesign.csproj" />
     <Project Path="src/Part03_2_AppArchitecture/Part03_2_AppArchitecture.csproj" />
+    <Project Path="src/Part03_3_Domain/Part03_3_Domain.csproj" />
+    <Project Path="src/Part03_3_Application/Part03_3_Application.csproj" />
+    <Project Path="src/Part03_3_Infrastructure/Part03_3_Infrastructure.csproj" />
     <Project Path="src/Part03_3_ProjectStructure/Part03_3_ProjectStructure.csproj" />
     <Project Path="src/Part03_4_ArchTesting/Part03_4_ArchTesting.csproj" />
     <Project Path="src/Part04_1_EFCore/Part04_1_EFCore.csproj" />
@@ -45,5 +48,9 @@
     <Project Path="tests/Step08_LoggingErrorsHealth.Tests/Step08_LoggingErrorsHealth.Tests.csproj" />
     <Project Path="tests/Step09_IntegrationTesting.Tests/Step09_IntegrationTesting.Tests.csproj" />
     <Project Path="tests/Step10_HttpFoundation.Tests/Step10_HttpFoundation.Tests.csproj" />
+    <Project Path="tests/Part03_1_ApiDesign.Tests/Part03_1_ApiDesign.Tests.csproj" />
+    <Project Path="tests/Part03_2_AppArchitecture.Tests/Part03_2_AppArchitecture.Tests.csproj" />
+    <Project Path="tests/Part03_3_ProjectStructure.Tests/Part03_3_ProjectStructure.Tests.csproj" />
+    <Project Path="tests/Part03_4_ArchTesting.Tests/Part03_4_ArchTesting.Tests.csproj" />
   </Folder>
 </Solution>
