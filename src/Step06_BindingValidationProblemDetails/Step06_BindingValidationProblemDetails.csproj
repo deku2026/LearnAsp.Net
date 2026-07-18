@@ -1,4 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <!-- .NET 10 built-in validation source generator: required for AddValidation() to emit interceptors.
+         Without this the Minimal API validation is a silent no-op. -->
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);Step06_BindingValidationProblemDetails</InterceptorsNamespaces>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Campus.Contracts\Campus.Contracts.csproj" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />

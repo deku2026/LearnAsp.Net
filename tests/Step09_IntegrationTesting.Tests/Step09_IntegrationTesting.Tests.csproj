@@ -13,6 +13,7 @@
     <PackageReference Include="Respawn" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Xunit.SkippableFact" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Step09_IntegrationTesting\Step09_IntegrationTesting.csproj" />
