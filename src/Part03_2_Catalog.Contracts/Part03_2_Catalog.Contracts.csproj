@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Part03_2.Catalog.Contracts</RootNamespace>
+    <AssemblyName>Part03_2.Catalog.Contracts</AssemblyName>
+  </PropertyGroup>
+</Project>

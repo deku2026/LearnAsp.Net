@@ -39,21 +39,25 @@ public sealed class ApiDesignTests : IClassFixture<CampusWebApplicationFactory<P
         var get1 = await _client.GetAsync($"/api/v1/courses/{id}");
         var etag = get1.Headers.ETag!.Tag;
 
-        var get304 = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/courses/{id}");
-        get304.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(etag));
-        var r304 = await _client.SendAsync(get304);
-        Assert.Equal(HttpStatusCode.NotModified, r304.StatusCode);
+        using (var get304 = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/courses/{id}"))
+        {
+            get304.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(etag));
+            var r304 = await _client.SendAsync(get304);
+            Assert.Equal(HttpStatusCode.NotModified, r304.StatusCode);
+        }
 
         var put428 = await _client.PutAsJsonAsync($"/api/v1/courses/{id}", new { title = "NoEtag", credits = 2 });
         Assert.Equal((HttpStatusCode)428, put428.StatusCode);
 
-        var put = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/courses/{id}")
+        using (var put = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/courses/{id}")
         {
             Content = JsonContent.Create(new { title = "Updated", credits = 4 }),
-        };
-        put.Headers.IfMatch.Add(new EntityTagHeaderValue(etag));
-        var putOk = await _client.SendAsync(put);
-        Assert.Equal(HttpStatusCode.OK, putOk.StatusCode);
+        })
+        {
+            put.Headers.IfMatch.Add(new EntityTagHeaderValue(etag));
+            var putOk = await _client.SendAsync(put);
+            Assert.Equal(HttpStatusCode.OK, putOk.StatusCode);
+        }
     }
 
     [Fact]
@@ -69,18 +73,24 @@ public sealed class ApiDesignTests : IClassFixture<CampusWebApplicationFactory<P
         })).Content.ReadFromJsonAsync<JsonElement>();
 
         var body = new { studentId = Guid.NewGuid(), sectionId = section.GetProperty("id").GetGuid() };
-        var req1 = new HttpRequestMessage(HttpMethod.Post, "/api/v1/enrollments") { Content = JsonContent.Create(body) };
-        req1.Headers.Add("Idempotency-Key", "key-1");
-        var r1 = await _client.SendAsync(req1);
-        Assert.Equal(HttpStatusCode.Created, r1.StatusCode);
-        var e1 = await r1.Content.ReadFromJsonAsync<JsonElement>();
 
-        var req2 = new HttpRequestMessage(HttpMethod.Post, "/api/v1/enrollments") { Content = JsonContent.Create(body) };
-        req2.Headers.Add("Idempotency-Key", "key-1");
-        var r2 = await _client.SendAsync(req2);
-        Assert.Equal(HttpStatusCode.Created, r2.StatusCode);
-        var e2 = await r2.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(e1.GetProperty("id").GetGuid(), e2.GetProperty("id").GetGuid());
+        JsonElement e1;
+        using (var req1 = new HttpRequestMessage(HttpMethod.Post, "/api/v1/enrollments") { Content = JsonContent.Create(body) })
+        {
+            req1.Headers.Add("Idempotency-Key", "key-1");
+            var r1 = await _client.SendAsync(req1);
+            Assert.Equal(HttpStatusCode.Created, r1.StatusCode);
+            e1 = await r1.Content.ReadFromJsonAsync<JsonElement>();
+        }
+
+        using (var req2 = new HttpRequestMessage(HttpMethod.Post, "/api/v1/enrollments") { Content = JsonContent.Create(body) })
+        {
+            req2.Headers.Add("Idempotency-Key", "key-1");
+            var r2 = await _client.SendAsync(req2);
+            Assert.Equal(HttpStatusCode.Created, r2.StatusCode);
+            var e2 = await r2.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(e1.GetProperty("id").GetGuid(), e2.GetProperty("id").GetGuid());
+        }
     }
 
     [Fact]
@@ -116,11 +126,14 @@ public sealed class ApiDesignTests : IClassFixture<CampusWebApplicationFactory<P
     }
 
     [Fact]
-    public async Task Openapi_documents_exist()
+    public async Task Openapi_documents_exist_with_core_paths()
     {
         var v1 = await _client.GetAsync("/openapi/v1.json");
         var v2 = await _client.GetAsync("/openapi/v2.json");
         Assert.Equal(HttpStatusCode.OK, v1.StatusCode);
         Assert.Equal(HttpStatusCode.OK, v2.StatusCode);
+        var body = await v1.Content.ReadAsStringAsync();
+        Assert.Contains("courses", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("enrollments", body, StringComparison.OrdinalIgnoreCase);
     }
 }

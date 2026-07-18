@@ -3,5 +3,6 @@
     <ProjectReference Include="..\Part03_3_Application\Part03_3_Application.csproj" />
     <ProjectReference Include="..\Part03_3_Infrastructure\Part03_3_Infrastructure.csproj" />
     <ProjectReference Include="..\Part03_3_Domain\Part03_3_Domain.csproj" />
+    <ProjectReference Include="..\Part03_3_Contracts\Part03_3_Contracts.csproj" />
   </ItemGroup>
 </Project>

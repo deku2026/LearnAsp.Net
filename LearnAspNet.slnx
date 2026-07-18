@@ -13,7 +13,15 @@
     <Project Path="src/Step09_IntegrationTesting/Step09_IntegrationTesting.csproj" />
     <Project Path="src/Step10_HttpFoundation/Step10_HttpFoundation.csproj" />
     <Project Path="src/Part03_1_ApiDesign/Part03_1_ApiDesign.csproj" />
+    <Project Path="src/Part03_2_BuildingBlocks/Part03_2_BuildingBlocks.csproj" />
+    <Project Path="src/Part03_2_Catalog.Contracts/Part03_2_Catalog.Contracts.csproj" />
+    <Project Path="src/Part03_2_Catalog/Part03_2_Catalog.csproj" />
+    <Project Path="src/Part03_2_Enrollment.Contracts/Part03_2_Enrollment.Contracts.csproj" />
+    <Project Path="src/Part03_2_Enrollment/Part03_2_Enrollment.csproj" />
+    <Project Path="src/Part03_2_Notices.Contracts/Part03_2_Notices.Contracts.csproj" />
+    <Project Path="src/Part03_2_Notices/Part03_2_Notices.csproj" />
     <Project Path="src/Part03_2_AppArchitecture/Part03_2_AppArchitecture.csproj" />
+    <Project Path="src/Part03_3_Contracts/Part03_3_Contracts.csproj" />
     <Project Path="src/Part03_3_Domain/Part03_3_Domain.csproj" />
     <Project Path="src/Part03_3_Application/Part03_3_Application.csproj" />
     <Project Path="src/Part03_3_Infrastructure/Part03_3_Infrastructure.csproj" />

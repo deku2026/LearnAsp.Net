@@ -15,7 +15,7 @@ public sealed class StructureTests : IClassFixture<CampusWebApplicationFactory<P
     }
 
     [Fact]
-    public async Task Composition_root_creates_course_via_handler()
+    public async Task Composition_root_creates_course_via_handler_and_contracts_dto()
     {
         var r = await _client.PostAsJsonAsync("/api/v1/courses", new { code = "S301", title = "Structure", credits = 3 });
         Assert.Equal(HttpStatusCode.Created, r.StatusCode);
@@ -24,5 +24,13 @@ public sealed class StructureTests : IClassFixture<CampusWebApplicationFactory<P
 
         var list = await _client.GetFromJsonAsync<JsonElement>("/api/v1/courses");
         Assert.True(list.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task Root_lists_contracts_layer()
+    {
+        var json = await _client.GetFromJsonAsync<JsonElement>("/");
+        var layers = json.GetProperty("layers").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Contains("Contracts", layers);
     }
 }

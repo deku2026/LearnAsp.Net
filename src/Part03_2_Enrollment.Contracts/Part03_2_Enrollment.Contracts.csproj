@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Part03_2.Enrollment.Contracts</RootNamespace>
+    <AssemblyName>Part03_2.Enrollment.Contracts</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Campus.Contracts\Campus.Contracts.csproj" />
+  </ItemGroup>
+</Project>

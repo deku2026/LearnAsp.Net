@@ -16,6 +16,13 @@
     <ProjectReference Include="..\..\src\Part03_3_Domain\Part03_3_Domain.csproj" />
     <ProjectReference Include="..\..\src\Part03_3_Application\Part03_3_Application.csproj" />
     <ProjectReference Include="..\..\src\Part03_3_Infrastructure\Part03_3_Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Part03_3_Contracts\Part03_3_Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Part03_2_Catalog.Contracts\Part03_2_Catalog.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Part03_2_Catalog\Part03_2_Catalog.csproj" />
+    <ProjectReference Include="..\..\src\Part03_2_Enrollment.Contracts\Part03_2_Enrollment.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Part03_2_Enrollment\Part03_2_Enrollment.csproj" />
+    <ProjectReference Include="..\..\src\Part03_2_Notices.Contracts\Part03_2_Notices.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Part03_2_Notices\Part03_2_Notices.csproj" />
     <ProjectReference Include="..\..\src\Campus.Testing\Campus.Testing.csproj" />
   </ItemGroup>
 </Project>

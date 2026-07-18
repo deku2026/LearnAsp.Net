@@ -98,17 +98,15 @@ public sealed class CampusStore
 
     public EnrollmentEntity Enroll(Guid studentId, Guid sectionId, string? idempotencyKey, string bodyHash)
     {
-        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        if (!string.IsNullOrWhiteSpace(idempotencyKey) &&
+            _idempotency.TryGetValue(idempotencyKey, out var existing))
         {
-            if (_idempotency.TryGetValue(idempotencyKey, out var existing))
+            if (!string.Equals(existing.BodyHash, bodyHash, StringComparison.Ordinal))
             {
-                if (!string.Equals(existing.BodyHash, bodyHash, StringComparison.Ordinal))
-                {
-                    throw new IdempotencyConflictException();
-                }
-
-                return _enrollments[existing.EnrollmentId];
+                throw new IdempotencyConflictException();
             }
+
+            return _enrollments[existing.EnrollmentId];
         }
 
         if (!_sections.TryGetValue(sectionId, out var section))

@@ -4,11 +4,11 @@
 // Title : 项目结构 · 分层骨架
 
 using Part03_3.Application;
+using Part03_3.Contracts;
 using Part03_3.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Composition root only: Application + Infrastructure registration
 builder.Services.AddPart03_3Application();
 builder.Services.AddPart03_3Infrastructure();
 
@@ -17,26 +17,25 @@ var app = builder.Build();
 app.MapGet("/", () => Results.Ok(new
 {
     lab = "Part03_3_ProjectStructure",
-    layers = new[] { "Domain", "Application", "Infrastructure", "Api(host)" },
-    rule = "Application ↛ Infrastructure; Domain ↛ EF/ASP.NET; composition root wires all",
+    layers = new[] { "Contracts", "Domain", "Application", "Infrastructure", "Api(host)" },
+    rule = "Application ↛ Infrastructure; Domain ↛ EF/ASP.NET; Contracts ↛ Domain; composition root wires all",
+    deploy = "see deploy/docker|k8s|bicep stubs",
 }));
 
-app.MapGet("/api/v1/courses", async (ICourseRepository repo) => Results.Ok(await repo.ListAsync()));
+app.MapGet("/api/v1/courses", async (ICourseRepository repo) =>
+{
+    var list = await repo.ListAsync();
+    return Results.Ok(list.Select(c => new CourseResponse(c.Id, c.Code, c.Title, c.Credits)));
+});
 
-app.MapPost("/api/v1/courses", async (CreateCourseDto dto, ICreateCourseHandler handler) =>
+app.MapPost("/api/v1/courses", async (CreateCourseRequest dto, ICreateCourseHandler handler) =>
 {
     var course = await handler.HandleAsync(dto.Code, dto.Title, dto.Credits);
-    return Results.Created($"/api/v1/courses/{course.Id}", new
-    {
-        course.Id,
-        course.Code,
-        course.Title,
-        course.Credits,
-    });
+    return Results.Created(
+        $"/api/v1/courses/{course.Id}",
+        new CourseResponse(course.Id, course.Code, course.Title, course.Credits));
 });
 
 app.Run();
 
 public partial class Program;
-
-public sealed record CreateCourseDto(string Code, string Title, int Credits);

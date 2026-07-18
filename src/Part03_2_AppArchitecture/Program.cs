@@ -3,12 +3,14 @@
 // Part  : Part03_2 · AppArchitecture
 // Title : 应用架构 · 模块化单体
 
-using Part03_2_AppArchitecture.Modules.Catalog;
-using Part03_2_AppArchitecture.Modules.Enrollment;
-using Part03_2_AppArchitecture.Modules.Notices;
-using Part03_2_AppArchitecture.Outbox;
-
 using System.Text.Json.Serialization;
+using Part03_2.BuildingBlocks;
+using Part03_2.Catalog;
+using Part03_2.Catalog.Contracts;
+using Part03_2.Enrollment;
+using Part03_2.Enrollment.Contracts;
+using Part03_2.Notices;
+using Part03_2.Notices.Contracts;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,22 +19,33 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-builder.Services.AddSingleton<CatalogModule>();
-builder.Services.AddSingleton<ICatalogModule>(sp => sp.GetRequiredService<CatalogModule>());
-builder.Services.AddSingleton<InMemoryOutbox>();
-builder.Services.AddSingleton<IOutbox>(sp => sp.GetRequiredService<InMemoryOutbox>());
-builder.Services.AddSingleton<NoticesModule>();
-builder.Services.AddSingleton<INoticesModule>(sp => sp.GetRequiredService<NoticesModule>());
-builder.Services.AddSingleton<IEnrollmentModule, EnrollmentModule>();
-builder.Services.AddHostedService<OutboxProcessor>();
+// Composition root: modules only via PublicApi contracts + DI extensions
+builder.Services.AddInProcessOutbox();
+builder.Services.AddCatalogModule();
+builder.Services.AddEnrollmentModule();
+builder.Services.AddNoticesModule();
 
 var app = builder.Build();
+
+// Ensure module databases (in-memory schemas) are created
+using (var scope = app.Services.CreateScope())
+{
+    await scope.ServiceProvider.GetRequiredService<CatalogDbContext>().Database.EnsureCreatedAsync();
+    await scope.ServiceProvider.GetRequiredService<EnrollmentDbContext>().Database.EnsureCreatedAsync();
+    await scope.ServiceProvider.GetRequiredService<NoticesDbContext>().Database.EnsureCreatedAsync();
+}
 
 app.MapGet("/", () => Results.Ok(new
 {
     lab = "Part03_2_AppArchitecture",
-    modules = new[] { "Catalog", "Enrollment", "Notices" },
-    communication = new[] { "PublicApi sync seat reserve", "Outbox async EnrollmentConfirmed → Notices" },
+    modules = new[]
+    {
+        "Part03_2.Catalog (+ Contracts)",
+        "Part03_2.Enrollment (+ Contracts) → depends only Catalog.Contracts",
+        "Part03_2.Notices (+ Contracts) → consumes EnrollmentConfirmed via Outbox",
+    },
+    dataIsolation = "separate EF InMemory databases: part03_2_catalog | part03_2_enrollment | part03_2_notices",
+    communication = new[] { "sync PublicApi seat reserve", "async Outbox EnrollmentConfirmed → Notices" },
 }));
 
 var api = app.MapGroup("/api/v1");

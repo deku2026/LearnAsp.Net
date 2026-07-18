@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Part03_3_Domain\Part03_3_Domain.csproj" />
+    <ProjectReference Include="..\Part03_3_Contracts\Part03_3_Contracts.csproj" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
 </Project>
