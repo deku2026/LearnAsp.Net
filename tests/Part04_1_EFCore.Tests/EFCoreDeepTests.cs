@@ -104,11 +104,12 @@ public sealed class EFCoreDeepTests
             code = "SPLIT", title = "Split Test", credits = 2, collegeId = "college-1",
         })).Content.ReadFromJsonAsync<JsonElement>();
 
-        var section = await (await client.PostAsJsonAsync("/api/v1/sections", new
+        // Create section (needed for cartesian/split queries to have data)
+        await client.PostAsJsonAsync("/api/v1/sections", new
         {
             courseId = course.GetProperty("id").GetGuid(),
             sectionName = "S1", semester = "2026F", capacity = 10, collegeId = "college-1",
-        })).Content.ReadFromJsonAsync<JsonElement>();
+        });
 
         // Cartesian and split both return OK
         var r1 = await client.GetAsync("/api/v1/sections/cartesian");

@@ -22,7 +22,7 @@ public sealed class MultiTenantTests
         return http;
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Tenant_a_sees_only_own_courses()
     {
         EnsurePg();
@@ -53,7 +53,7 @@ public sealed class MultiTenantTests
         Assert.Equal("college-b", bCourses[0].GetProperty("collegeId").GetString());
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Tenant_a_access_tenant_b_course_returns_404()
     {
         EnsurePg();
@@ -71,7 +71,7 @@ public sealed class MultiTenantTests
         Assert.Equal(HttpStatusCode.NotFound, r2.StatusCode);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task SaveChanges_auto_stamps_college_id()
     {
         EnsurePg();
@@ -86,7 +86,7 @@ public sealed class MultiTenantTests
         Assert.Equal("college-auto", course.GetProperty("collegeId").GetString());
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Named_filters_ignore_softdelete_preserves_tenant()
     {
         EnsurePg();

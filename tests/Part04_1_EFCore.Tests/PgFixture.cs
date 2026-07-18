@@ -115,10 +115,15 @@ public sealed class PgFixture : IAsyncLifetime
             }
             IsAvailable = true;
         }
-        catch (Exception ex)
+        catch (NpgsqlException ex)
         {
             IsAvailable = false;
             SkipReason = $"Migration failed: {ex.Message}";
+        }
+        catch (InvalidOperationException ex)
+        {
+            IsAvailable = false;
+            SkipReason = $"Migration invalid op: {ex.Message}";
         }
     }
 
@@ -130,7 +135,8 @@ public sealed class PgFixture : IAsyncLifetime
 
     public WebApplicationFactory<Program> CreateFactory()
     {
-        return new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        var factory = new WebApplicationFactory<Program>();
+        return factory.WithWebHostBuilder(b =>
         {
             b.UseSetting("ConnectionStrings:Campus", ConnectionString);
             b.ConfigureAppConfiguration((_, cfg) =>

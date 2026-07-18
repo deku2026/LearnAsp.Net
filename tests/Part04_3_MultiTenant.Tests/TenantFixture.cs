@@ -72,7 +72,16 @@ public sealed class TenantFixture : IAsyncLifetime
             catch (NpgsqlException) { await db.Database.EnsureDeletedAsync(); await db.Database.MigrateAsync(); }
             IsAvailable = true;
         }
-        catch (Exception ex) { IsAvailable = false; SkipReason = $"Migration: {ex.Message}"; }
+        catch (NpgsqlException ex)
+        {
+            IsAvailable = false;
+            SkipReason = $"Migration failed: {ex.Message}";
+        }
+        catch (InvalidOperationException ex)
+        {
+            IsAvailable = false;
+            SkipReason = $"Migration invalid op: {ex.Message}";
+        }
     }
 
     public async Task DisposeAsync()
@@ -82,7 +91,8 @@ public sealed class TenantFixture : IAsyncLifetime
 
     public WebApplicationFactory<Program> CreateFactory(string? tenantId = null)
     {
-        return new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        var factory = new WebApplicationFactory<Program>();
+        return factory.WithWebHostBuilder(b =>
         {
             b.UseSetting("ConnectionStrings:Campus", ConnectionString);
             b.ConfigureAppConfiguration((_, cfg) =>
