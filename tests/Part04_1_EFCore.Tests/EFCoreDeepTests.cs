@@ -17,7 +17,7 @@ public sealed class EFCoreDeepTests
 
     private void EnsurePg() => Skip.IfNotAvailable(_fx);
 
-    [Fact]
+    [SkippableFact]
     public async Task Keyset_pagination_returns_ordered_pages()
     {
         EnsurePg();
@@ -56,7 +56,7 @@ public sealed class EFCoreDeepTests
         Assert.True(data2.All(d => d.GetProperty("id").GetGuid() > lastId));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task N1_fix_projection_returns_single_query_data()
     {
         EnsurePg();
@@ -91,7 +91,7 @@ public sealed class EFCoreDeepTests
         Assert.True(proj.GetProperty("count").GetInt32() >= 1);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task AsSplitQuery_returns_data_without_duplication()
     {
         EnsurePg();
@@ -117,7 +117,7 @@ public sealed class EFCoreDeepTests
         Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Optimistic_concurrency_second_write_returns_409()
     {
         EnsurePg();
@@ -157,7 +157,7 @@ public sealed class EFCoreDeepTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ExecuteUpdate_bypasses_change_tracking()
     {
         EnsurePg();
@@ -182,7 +182,7 @@ public sealed class EFCoreDeepTests
         Assert.True(body.GetProperty("affected").GetInt32() >= 1);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Named_filters_ignore_softdelete_preserves_tenant()
     {
         EnsurePg();
@@ -206,7 +206,7 @@ public sealed class EFCoreDeepTests
         Assert.True(courses.All(c => c.GetProperty("collegeId").GetString() == "college-1"));
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Migrations_history_table_exists()
     {
         EnsurePg();

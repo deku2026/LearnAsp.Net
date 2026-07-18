@@ -100,6 +100,6 @@ public static class Skip
     public static void IfNotAvailable(PgFixture fx)
     {
         if (!fx.IsAvailable)
-            Assert.Fail(fx.SkipReason ?? "PostgreSQL unavailable");
+            global::Xunit.Skip.If(fx.SkipReason is not null, fx.SkipReason ?? "PostgreSQL unavailable");
     }
 }
