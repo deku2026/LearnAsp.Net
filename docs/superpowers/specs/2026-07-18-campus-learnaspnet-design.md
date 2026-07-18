@@ -1,9 +1,9 @@
 # Campus LearnAsp.Net — Design Spec
 
-**Date:** 2026-07-18  
-**Status:** Approved (brainstorming §1–§3)  
-**Repo:** `C:\MyFile\ArcForges\LearnAsp.Net`  
-**Docs source of truth:** `C:\MyFile\ArcForges\ArchitectureDesign\ASP.NetStudy\`  
+**Date:** 2026-07-18
+**Status:** Approved (brainstorming §1–§3)
+**Repo:** `C:\MyFile\ArcForges\LearnAsp.Net`
+**Docs source of truth:** `C:\MyFile\ArcForges\ArchitectureDesign\ASP.NetStudy\`
 **Reference only (patterns, not domain):** `C:\MyFile\ArcForges\eShop`
 
 ---

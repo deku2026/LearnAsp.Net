@@ -48,18 +48,7 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public async Task UsingFactoryAsync(Func<WebApplicationFactory<Program>, Task> test)
     {
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Development");
-            builder.UseSetting("ConnectionStrings:Postgres", _connectionString);
-            builder.ConfigureAppConfiguration((_, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:Postgres"] = _connectionString,
-                });
-            });
-        });
+        await using var factory = new Step09WebApplicationFactory(_connectionString);
         await test(factory);
     }
 
@@ -112,7 +101,6 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
         catch (DockerImageNotFoundException ex)
         {
-            // Windows CI may expose Docker without the requested image / pull rights.
             return FailContainer($"Testcontainers image missing: {ex.Message}");
         }
         catch (DockerApiException ex)
@@ -233,6 +221,22 @@ public sealed class PostgresFixture : IAsyncLifetime
         await using var create = conn.CreateCommand();
         create.CommandText = $"CREATE DATABASE \"{dbName.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         await create.ExecuteNonQueryAsync();
+    }
+
+    private sealed class Step09WebApplicationFactory(string connectionString) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("ConnectionStrings:Postgres", connectionString);
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:Postgres"] = connectionString,
+                });
+            });
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -39,10 +40,7 @@ public sealed class HttpFoundationTests : IAsyncLifetime
     private async Task WithFactoryAsync(Func<HttpClient, Task> test)
     {
         var baseUrl = _wireMock.Url!.TrimEnd('/') + "/";
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
-        {
-            b.UseSetting("ExternalCatalog:BaseUrl", baseUrl);
-        });
+        await using var factory = new Step10WebApplicationFactory(baseUrl);
         var client = factory.CreateClient();
         await test(client);
     }
@@ -83,4 +81,12 @@ public sealed class HttpFoundationTests : IAsyncLifetime
             var response = await client.GetAsync("/client-info");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         });
+
+    private sealed class Step10WebApplicationFactory(string catalogBaseUrl) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseSetting("ExternalCatalog:BaseUrl", catalogBaseUrl);
+        }
+    }
 }

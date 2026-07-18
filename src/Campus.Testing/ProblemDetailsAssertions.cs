@@ -1,15 +1,9 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 
 namespace Campus.Testing;
 
 public static class ProblemDetailsAssertions
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     public static async Task AssertErrorCodeAsync(HttpResponseMessage response, string expectedErrorCode)
     {
         await using var stream = await response.Content.ReadAsStreamAsync();
