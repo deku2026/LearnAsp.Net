@@ -65,7 +65,7 @@ jobs:
 
       - name: Test generic projects (Release)
         # Docker-backed PostgreSQL/Redis suites run only in Linux CI.
-        run: dotnet test LearnAspNet.GenericTests.slnx -c Release --no-build
+        run: dotnet test LearnAspNet.GenericTests.slnx -c Release --no-build --filter-not-trait Category=Docker
 
       - name: Run pre-commit hooks
         run: |

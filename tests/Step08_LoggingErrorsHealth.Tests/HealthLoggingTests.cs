@@ -94,6 +94,7 @@ public sealed class HealthLoggingTests : IClassFixture<CampusWebApplicationFacto
     }
 
     [Fact]
+    [Trait("Category", "Docker")]
     public async Task Ready_check_executes_a_real_postgres_query_when_available()
     {
         const string connectionString =
