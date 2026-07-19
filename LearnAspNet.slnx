@@ -67,5 +67,8 @@
     <Project Path="tests/Part05_1_AuthnAuthz.Tests/Part05_1_AuthnAuthz.Tests.csproj" />
     <Project Path="tests/Part05_2_SpaAuth.Tests/Part05_2_SpaAuth.Tests.csproj" />
     <Project Path="tests/Part05_Security.IntegrationTests/Part05_Security.IntegrationTests.csproj" />
+    <Project Path="tests/Part06_1_MessagingPatterns.Tests/Part06_1_MessagingPatterns.Tests.csproj" />
+    <Project Path="tests/Part06_2_MessagingTools.Tests/Part06_2_MessagingTools.Tests.csproj" />
+    <Project Path="tests/Part07_DistributedComm.Tests/Part07_DistributedComm.Tests.csproj" />
   </Folder>
 </Solution>

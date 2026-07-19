@@ -1,8 +1,8 @@
-# LearnAspNet · 现代 ASP.NET Core 10 / .NET 10 学习占位脚手架
+# LearnAspNet · 现代 ASP.NET Core 10 / .NET 10 实战学习仓库
 
 按 `C:/MyFile/ArcForges/ArchitectureDesign/ASP.NetStudy/ASP.NET-Core-net10-学习路线图.md`
-逐步铺好的 **31 个空 `WebApplication` 占位**，每个对应路线图里的一个「步骤 N」或「第 N 部分-M」详解 md。
-后续往每个 `Program.cs` 里直接写真实代码 (按文档实施 + `WebApplicationFactory` 集测)，**没有反射调度器的盒子约束**。
+逐步实现的 **31 个独立 `WebApplication` 实验**，每个对应路线图里的一个「步骤 N」或「第 N 部分-M」详解 md。
+已推进到 W7；完成阶段使用真实应用代码、数据库/中间件和集成测试，后续阶段保留可运行占位。
 
 阶段 14（Unity 接轨附录）不涉及；本仓不重写路线图，文档保留在 ArcForges 原位。
 
@@ -13,6 +13,7 @@
 - W4：Part03_1–4
 - W5：Part04_1–3
 - W6：Part05_1–2，详见 [Keycloak + SPA/BFF 安全实战](docs/w6-part05-security-lab.md)
+- W7：Part06_1–Part07，详见 [消息模式、RabbitMQ 与分布式通信实战](docs/w7-messaging-distributed-lab.md)
 
 ## 工作原理
 
