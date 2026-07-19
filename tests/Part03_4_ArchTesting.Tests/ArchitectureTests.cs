@@ -67,6 +67,16 @@ public sealed class LayerArchitectureTests
     }
 
     [Fact]
+    public void Handlers_are_internal()
+    {
+        var handlers = Application.GetTypes()
+            .Where(t => typeof(ICreateCourseHandler).IsAssignableFrom(t) && t is { IsClass: true, IsAbstract: false })
+            .ToList();
+        Assert.NotEmpty(handlers);
+        Assert.All(handlers, handler => Assert.True(handler.IsNotPublic, $"{handler.FullName} must be internal."));
+    }
+
+    [Fact]
     public void Course_entity_has_private_parameterless_ctor()
     {
         var ctor = typeof(Course).GetConstructor(
@@ -86,7 +96,7 @@ public sealed class LayerArchitectureTests
         Assert.Contains("Part03_3.Domain", refs);
     }
 
-    private static string Fail(TestResult r)
+    private static string Fail(NetArchTest.Rules.TestResult r)
         => "Violations: " + string.Join(", ", r.FailingTypeNames ?? Array.Empty<string>());
 }
 

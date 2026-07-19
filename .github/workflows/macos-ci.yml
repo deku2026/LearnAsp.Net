@@ -64,16 +64,7 @@ jobs:
         run: dotnet build LearnAspNet.slnx -c Release --no-restore
 
       - name: Test (Release)
-        run: dotnet test LearnAspNet.slnx -c Release --no-build --logger "trx;LogFilePrefix=macos"
+        run: dotnet test LearnAspNet.slnx -c Release --no-build
 
       - name: Run pre-commit hooks
-        run: |
-          set +e
-          pre-commit run --all-files --show-diff-on-failure --color=always
-          status=$?
-          set -e
-          if [[ ${status} -eq 0 ]]; then
-            exit 0
-          fi
-          echo 'pre-commit made changes; rerunning once'
-          pre-commit run --all-files --show-diff-on-failure --color=always
+        run: pre-commit run --all-files --show-diff-on-failure --color=always

@@ -62,15 +62,27 @@ var v2 = app.MapGroup("/api/v{version:apiVersion}")
     .MapToApiVersion(new ApiVersion(2, 0));
 
 // --- v1 courses ---
-v1.MapGet("/courses", (string? q, string? after, int? limit, CampusStore store) =>
+v1.MapGet("/courses", (string? q, string? after, int? limit, string? sort, CampusStore store) =>
 {
-    var page = store.ListCourses(q, after, limit ?? 20, out var next);
-    return Results.Ok(new
+    try
     {
-        data = page.Select(MapCourseV1),
-        nextCursor = next,
-        hasMore = next is not null,
-    });
+        var page = store.ListCourses(q, after, limit ?? 20, sort, out var next);
+        return Results.Ok(new
+        {
+            data = page.Select(MapCourseV1),
+            nextCursor = next,
+            hasMore = next is not null,
+        });
+    }
+    catch (ArgumentException)
+    {
+        return Results.BadRequest(new ProblemDetails
+        {
+            Title = "Invalid cursor or sort field",
+            Status = StatusCodes.Status400BadRequest,
+            Extensions = { ["errorCode"] = ErrorCodes.ValidationFailed },
+        });
+    }
 });
 
 v1.MapGet("/courses/{id:guid}", (Guid id, HttpContext http, CampusStore store) =>
@@ -150,19 +162,15 @@ v1.MapPost("/sections", (CreateSectionBody body, CampusStore store) =>
     }
 });
 
-v1.MapPost("/enrollments", async (HttpContext http, CreateEnrollmentBody body, CampusStore store) =>
+v1.MapPost("/enrollments", (HttpContext http, CreateEnrollmentBody body, CampusStore store) =>
 {
     if (!TryValidate(body, out var errors))
     {
         return ValidationProblem(errors);
     }
 
-    http.Request.EnableBuffering();
-    using var reader = new StreamReader(http.Request.Body, Encoding.UTF8, leaveOpen: true);
-    http.Request.Body.Position = 0;
-    var raw = await reader.ReadToEndAsync();
-    http.Request.Body.Position = 0;
-    var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
+    var canonicalBody = JsonSerializer.Serialize(body);
+    var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalBody)));
     var key = http.Request.Headers["Idempotency-Key"].FirstOrDefault();
 
     try

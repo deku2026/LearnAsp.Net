@@ -3,37 +3,71 @@ using Microsoft.Extensions.DependencyInjection;
 using Part03_2.BuildingBlocks;
 using Part03_2.Catalog.Contracts;
 using Part03_2.Enrollment.Contracts;
+using EnrollmentStatus = Campus.Contracts.EnrollmentStatus;
+using ErrorCodes = Campus.Contracts.ErrorCodes;
 
 namespace Part03_2.Enrollment;
 
-public sealed class EnrollmentModule(EnrollmentDbContext db, ICatalogModule catalog, IOutbox outbox) : IEnrollmentModule
+public sealed class EnrollmentModule(
+    EnrollmentDbContext db,
+    ICatalogModule catalog,
+    IOutbox outbox,
+    EnrollmentCoordinator coordinator) : IEnrollmentModule
 {
     public async Task<EnrollmentDto> EnrollAsync(Guid studentId, Guid sectionId, CancellationToken ct = default)
     {
-        _ = await catalog.GetSectionAsync(sectionId, ct) ?? throw new KeyNotFoundException("section");
-
-        var reserved = await catalog.TryReserveSeatAsync(sectionId, ct);
-        var aggregate = EnrollmentAggregate.Create(studentId, sectionId, reserved);
-
-        db.Enrollments.Add(new EnrollmentRow
+        await coordinator.Gate.WaitAsync(ct);
+        try
         {
-            Id = aggregate.Id,
-            StudentId = aggregate.StudentId,
-            SectionId = aggregate.SectionId,
-            Status = aggregate.Status,
-            CreatedAt = aggregate.CreatedAt,
-        });
-        await db.SaveChangesAsync(ct);
+            _ = await catalog.GetSectionAsync(sectionId, ct) ?? throw new KeyNotFoundException("section");
+            if (await db.Enrollments.AnyAsync(
+                    e => e.StudentId == studentId &&
+                         e.SectionId == sectionId &&
+                         e.Status != EnrollmentStatus.Cancelled,
+                    ct))
+            {
+                throw new InvalidOperationException(ErrorCodes.EnrollmentDuplicate);
+            }
 
-        if (aggregate.IsConfirmed)
-        {
-            await outbox.EnqueueAsync(
-                nameof(EnrollmentConfirmed),
-                new EnrollmentConfirmed(aggregate.Id, aggregate.StudentId, aggregate.SectionId, DateTimeOffset.UtcNow),
-                ct);
+            var reserved = await catalog.TryReserveSeatAsync(sectionId, ct);
+            var aggregate = EnrollmentAggregate.Create(studentId, sectionId, reserved);
+
+            db.Enrollments.Add(new EnrollmentRow
+            {
+                Id = aggregate.Id,
+                StudentId = aggregate.StudentId,
+                SectionId = aggregate.SectionId,
+                Status = aggregate.Status,
+                CreatedAt = aggregate.CreatedAt,
+            });
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch
+            {
+                if (reserved)
+                {
+                    await catalog.ReleaseSeatAsync(sectionId, ct);
+                }
+
+                throw;
+            }
+
+            if (aggregate.IsConfirmed)
+            {
+                await outbox.EnqueueAsync(
+                    nameof(EnrollmentConfirmed),
+                    new EnrollmentConfirmed(aggregate.Id, aggregate.StudentId, aggregate.SectionId, DateTimeOffset.UtcNow),
+                    ct);
+            }
+
+            return new EnrollmentDto(aggregate.Id, aggregate.StudentId, aggregate.SectionId, aggregate.Status, aggregate.CreatedAt);
         }
-
-        return new EnrollmentDto(aggregate.Id, aggregate.StudentId, aggregate.SectionId, aggregate.Status, aggregate.CreatedAt);
+        finally
+        {
+            coordinator.Gate.Release();
+        }
     }
 
     public async Task<IReadOnlyList<EnrollmentDto>> ListAsync(Guid? studentId = null, CancellationToken ct = default)
@@ -48,6 +82,7 @@ public sealed class EnrollmentModule(EnrollmentDbContext db, ICatalogModule cata
             .Select(e => new EnrollmentDto(e.Id, e.StudentId, e.SectionId, e.Status, e.CreatedAt))
             .ToListAsync(ct);
     }
+
 }
 
 public sealed class EnrollmentDbContext(DbContextOptions<EnrollmentDbContext> options) : DbContext(options)
@@ -57,6 +92,7 @@ public sealed class EnrollmentDbContext(DbContextOptions<EnrollmentDbContext> op
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<EnrollmentRow>().HasKey(x => x.Id);
+        modelBuilder.Entity<EnrollmentRow>().HasIndex(x => new { x.StudentId, x.SectionId });
     }
 }
 
@@ -74,7 +110,13 @@ public static class EnrollmentModuleExtensions
     public static IServiceCollection AddEnrollmentModule(this IServiceCollection services)
     {
         services.AddDbContext<EnrollmentDbContext>(o => o.UseInMemoryDatabase("part03_2_enrollment"));
+        services.AddSingleton<EnrollmentCoordinator>();
         services.AddScoped<IEnrollmentModule, EnrollmentModule>();
         return services;
     }
+}
+
+public sealed class EnrollmentCoordinator
+{
+    internal SemaphoreSlim Gate { get; } = new(1, 1);
 }

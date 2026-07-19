@@ -3,11 +3,10 @@
 // Part  : Part04_2 · Caching
 // Title : 缓存三层 · IMemoryCache · IDistributedCache(Redis) · HybridCache · Output Cache
 
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.OutputCaching;
 using Part04_2_Caching;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,6 +25,7 @@ builder.Services.AddDbContext<CacheDbContext>(o =>
 
 // L1: IMemoryCache (for comparison/benchmark — no stampede protection)
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<CacheQueryMetrics>();
 
 // HybridCache: L1 (memory) — L2 (Redis) optional via config
 // Redis L2 requires AddStackExchangeRedisCache; if Redis is down, HybridCache falls back to L1 only.
@@ -51,7 +51,6 @@ builder.Services.AddHybridCache(o =>
 // Output Cache (in-memory by default; Redis output cache backend not available in .NET 10 yet)
 builder.Services.AddOutputCache(o =>
 {
-    o.AddBasePolicy(b => b.Expire(TimeSpan.FromSeconds(30)));
     o.AddPolicy("Sections", b => b
         .Expire(TimeSpan.FromMinutes(5))
         .SetVaryByQuery("page", "limit")
@@ -60,9 +59,9 @@ builder.Services.AddOutputCache(o =>
 
 var app = builder.Build();
 
-// Auto-migrate
-using (var scope = app.Services.CreateScope())
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue("Database:ApplyMigrations", false))
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<CacheDbContext>();
     await db.Database.MigrateAsync();
 }
@@ -75,69 +74,97 @@ app.MapGet("/", () => Results.Ok(new
 {
     lab = "Part04_2_Caching",
     layers = new[] { "L1: IMemoryCache", "L2: Redis IDistributedCache", "HybridCache (L1+L2+stampede)", "Output Cache" },
-    redis = redisCs,
+    redisL2Enabled = useRedisL2,
 }));
 
 var api = app.MapGroup("/api/v1");
 
 // --- HybridCache: get course by id with tag-based invalidation ---
-api.MapGet("/courses/{id:guid}", async (Guid id, HybridCache hybrid, CacheDbContext db) =>
+api.MapGet("/courses/{id:guid}", async (
+    Guid id,
+    HttpContext http,
+    HybridCache hybrid,
+    CacheDbContext db,
+    CacheQueryMetrics metrics,
+    CancellationToken ct) =>
 {
+    var tenantId = TenantId(http);
     var dto = await hybrid.GetOrCreateAsync(
-        $"course:{id}",
-        async ct =>
+        $"tenant:{tenantId}:course:{id}",
+        async token =>
         {
-            var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id, ct);
+            metrics.Increment("course");
+            var course = await db.Courses.FirstOrDefaultAsync(
+                c => c.Id == id && c.CollegeId == tenantId,
+                token);
             return course is null ? null : new CourseDto(course.Id, course.Code, course.Title, course.Credits, course.CollegeId);
         },
-        tags: ["courses"],
-        cancellationToken: default);
+        tags: [$"tenant:{tenantId}:courses"],
+        cancellationToken: ct);
 
     return dto is null ? Results.NotFound() : Results.Ok(dto);
 });
 
 // --- Write-through invalidation: update → evict by key + tag ---
-api.MapPut("/courses/{id:guid}", async (Guid id, UpdateCourseBody body, CacheDbContext db, HybridCache hybrid) =>
+api.MapPut("/courses/{id:guid}", async (
+    Guid id,
+    UpdateCourseBody body,
+    HttpContext http,
+    CacheDbContext db,
+    HybridCache hybrid,
+    CancellationToken ct) =>
 {
-    var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id);
+    var tenantId = TenantId(http);
+    var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id && c.CollegeId == tenantId, ct);
     if (course is null) return Results.NotFound();
 
     // Use ExecuteUpdate to bypass xmin concurrency token (cache lab doesn't need concurrency)
     await db.Courses.Where(c => c.Id == id)
         .ExecuteUpdateAsync(s => s
             .SetProperty(c => c.Title, body.Title)
-            .SetProperty(c => c.Credits, body.Credits));
+            .SetProperty(c => c.Credits, body.Credits), ct);
 
     // Invalidate by key AND by tag (belt + suspenders for L1+L2)
-    await hybrid.RemoveAsync($"course:{id}");
-    await hybrid.RemoveByTagAsync("courses");
+    await hybrid.RemoveAsync($"tenant:{tenantId}:course:{id}", ct);
+    await hybrid.RemoveByTagAsync($"tenant:{tenantId}:courses", ct);
     return Results.Ok(new CourseDto(course.Id, course.Code, body.Title, body.Credits, course.CollegeId));
 });
 
 // --- Create course (for testing) ---
-api.MapPost("/courses", async (CreateCourseBody body, CacheDbContext db) =>
+api.MapPost("/courses", async (CreateCourseBody body, HttpContext http, CacheDbContext db, CancellationToken ct) =>
 {
+    var tenantId = http.Request.Headers["X-Tenant-Id"].FirstOrDefault()
+                   ?? body.CollegeId
+                   ?? "college-1";
     var course = new Course
     {
         Id = Guid.NewGuid(),
         Code = body.Code,
         Title = body.Title,
         Credits = body.Credits,
-        CollegeId = body.CollegeId ?? "college-1",
+        CollegeId = tenantId,
     };
     db.Courses.Add(course);
-    await db.SaveChangesAsync();
+    await db.SaveChangesAsync(ct);
     return Results.Created($"/api/v1/courses/{course.Id}", new CourseDto(course.Id, course.Code, course.Title, course.Credits, course.CollegeId));
 });
 
 // --- IMemoryCache demo (no stampede protection, for contrast) ---
-api.MapGet("/memory-cache/{id:guid}", async (Guid id, IMemoryCache mem, CacheDbContext db) =>
+api.MapGet("/memory-cache/{id:guid}", async (
+    Guid id,
+    HttpContext http,
+    IMemoryCache mem,
+    CacheDbContext db,
+    CacheQueryMetrics metrics,
+    CancellationToken ct) =>
 {
-    var key = $"mem:course:{id}";
+    var tenantId = TenantId(http);
+    var key = $"mem:tenant:{tenantId}:course:{id}";
     if (mem.TryGetValue(key, out CourseDto? cached) && cached is not null)
         return Results.Ok(new { source = "memory", data = cached });
 
-    var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id);
+    metrics.Increment("memory");
+    var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id && c.CollegeId == tenantId, ct);
     if (course is null) return Results.NotFound();
 
     var dto = new CourseDto(course.Id, course.Code, course.Title, course.Credits, course.CollegeId);
@@ -146,19 +173,29 @@ api.MapGet("/memory-cache/{id:guid}", async (Guid id, IMemoryCache mem, CacheDbC
 });
 
 // --- HybridCache stampede demo: concurrent cold-cache requests → only 1 DB query ---
-api.MapGet("/stampede/{id:guid}", async (Guid id, HybridCache hybrid, CacheDbContext db) =>
+api.MapGet("/stampede/{id:guid}", async (
+    Guid id,
+    HttpContext http,
+    HybridCache hybrid,
+    CacheDbContext db,
+    CacheQueryMetrics metrics,
+    CancellationToken ct) =>
 {
+    var tenantId = TenantId(http);
     var dto = await hybrid.GetOrCreateAsync(
-        $"stampede:{id}",
-        async ct =>
+        $"tenant:{tenantId}:stampede:{id}",
+        async token =>
         {
+            metrics.Increment("stampede");
             // Simulate slow DB query
-            await Task.Delay(100, ct);
-            var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id, ct);
+            await Task.Delay(100, token);
+            var course = await db.Courses.FirstOrDefaultAsync(
+                c => c.Id == id && c.CollegeId == tenantId,
+                token);
             return course is null ? null : new CourseDto(course.Id, course.Code, course.Title, course.Credits, course.CollegeId);
         },
-        tags: ["stampede"],
-        cancellationToken: default);
+        tags: [$"tenant:{tenantId}:stampede"],
+        cancellationToken: ct);
 
     return dto is null ? Results.NotFound() : Results.Ok(dto);
 });
@@ -175,22 +212,48 @@ api.MapPost("/sections/invalidate", async (IOutputCacheStore store) =>
 });
 
 // --- Penetration: cache null result with short TTL ---
-api.MapGet("/penetration/{id:guid}", async (Guid id, HybridCache hybrid, CacheDbContext db) =>
+api.MapGet("/penetration/{id:guid}", async (
+    Guid id,
+    HttpContext http,
+    HybridCache hybrid,
+    CacheDbContext db,
+    CacheQueryMetrics metrics,
+    CancellationToken ct) =>
 {
+    var tenantId = TenantId(http);
     var dto = await hybrid.GetOrCreateAsync(
-        $"penetration:{id}",
-        async ct =>
+        $"tenant:{tenantId}:penetration:{id}",
+        async token =>
         {
-            var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id, ct);
+            metrics.Increment("penetration");
+            var course = await db.Courses.FirstOrDefaultAsync(
+                c => c.Id == id && c.CollegeId == tenantId,
+                token);
             return course is null ? null : new CourseDto(course.Id, course.Code, course.Title, course.Credits, course.CollegeId);
         },
-        tags: ["penetration"],
-        cancellationToken: default);
+        options: new HybridCacheEntryOptions
+        {
+            Expiration = TimeSpan.FromSeconds(30 + Random.Shared.Next(0, 10)),
+            LocalCacheExpiration = TimeSpan.FromSeconds(10),
+        },
+        tags: [$"tenant:{tenantId}:penetration"],
+        cancellationToken: ct);
 
     return dto is null ? Results.NotFound(new { demo = "null cached with short TTL, second call skips DB" }) : Results.Ok(dto);
 });
 
 app.Run();
+
+static string TenantId(HttpContext http)
+{
+    var tenantId = http.Request.Headers["X-Tenant-Id"].FirstOrDefault() ?? "college-1";
+    if (tenantId.Length is < 1 or > 64 || tenantId.Any(ch => !(char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_')))
+    {
+        throw new BadHttpRequestException("Invalid X-Tenant-Id.", StatusCodes.Status400BadRequest);
+    }
+
+    return tenantId;
+}
 
 public partial class Program;
 

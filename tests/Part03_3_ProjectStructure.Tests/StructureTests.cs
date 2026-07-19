@@ -33,4 +33,16 @@ public sealed class StructureTests : IClassFixture<CampusWebApplicationFactory<P
         var layers = json.GetProperty("layers").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Contains("Contracts", layers);
     }
+
+    [Fact]
+    public async Task Domain_invariants_surface_as_validation_problem()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/courses",
+            new { code = "", title = "", credits = 0 });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(
+            "application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+    }
 }

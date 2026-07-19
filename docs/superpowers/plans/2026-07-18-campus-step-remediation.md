@@ -8,6 +8,7 @@
 - Step06: add `InterceptorsNamespaces` to csproj (built-in validation silently no-op)
 - Step10: pin `KnownProxies` (don't clear — spoofing hole)
 - Step09: EF migrations instead of `EnsureCreated`; Respawn ignores `__EFMigrationsHistory`
+- Step09: remove runtime `DevTestAuthHandler`; production uses JwtBearer and tests replace auth only through `ConfigureTestServices`
 
 ## P1 (doc-required demos)
 - Step01: PeriodicTimer; per-tick try/catch; `IServiceScopeFactory` scoped demo
@@ -21,6 +22,7 @@
 
 ## P2 (polish)
 - Step10: `DelegatingHandler`; HTTP/2 endpoint awareness
+- Step10: real Kestrel 413/override test; WireMock verifies retry and outbound headers
 - Step09: Bogus faker (optional)
 
 ## Verification

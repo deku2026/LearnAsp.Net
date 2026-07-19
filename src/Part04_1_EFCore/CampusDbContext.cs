@@ -1,7 +1,7 @@
-using Campus.Contracts;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace Part04_1_EFCore;
 
@@ -81,6 +81,7 @@ public sealed class CampusDbContext(DbContextOptions<CampusDbContext> options) :
         e.Property(x => x.Present);
         e.HasOne(x => x.Enrollment).WithMany(en => en.AttendanceRecords).HasForeignKey(x => x.EnrollmentId);
         e.HasIndex(x => x.EnrollmentId);
+        e.HasQueryFilter("Tenant", x => x.Enrollment!.CollegeId == EfTenantAccessor.CurrentCollegeId);
     }
 }
 
@@ -162,4 +163,24 @@ public sealed record CourseDetailDto(
     string Title,
     int Credits,
     string CollegeId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    uint Version);
+
+public sealed class QueryCounterInterceptor : DbCommandInterceptor
+{
+    private int _count;
+
+    public int Count => Volatile.Read(ref _count);
+
+    public void Reset() => Interlocked.Exchange(ref _count, 0);
+
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result,
+        CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _count);
+        return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+    }
+}

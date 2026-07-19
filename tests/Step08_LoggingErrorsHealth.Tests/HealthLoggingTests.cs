@@ -93,7 +93,7 @@ public sealed class HealthLoggingTests : IClassFixture<CampusWebApplicationFacto
         Assert.Equal(32, value.Length);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Ready_check_executes_a_real_postgres_query_when_available()
     {
         const string connectionString =
@@ -101,7 +101,7 @@ public sealed class HealthLoggingTests : IClassFixture<CampusWebApplicationFacto
         await using var factory = new CampusWebApplicationFactory<Program>()
             .WithSetting("ConnectionStrings:Postgres", connectionString);
         var response = await factory.CreateClient().GetAsync("/health/ready");
-        Skip.IfNot(
+        Assert.SkipUnless(
             response.StatusCode == HttpStatusCode.OK,
             "Local PostgreSQL is unavailable; Docker-backed readiness verification was skipped.");
 

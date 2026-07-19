@@ -1,10 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Campus.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Part04_1_EFCore;
 
 namespace Part04_1_EFCore.Tests;
 
@@ -17,7 +13,7 @@ public sealed class EFCoreDeepTests
 
     private void EnsurePg() => Skip.IfNotAvailable(_fx);
 
-    [SkippableFact]
+    [Fact]
     public async Task Keyset_pagination_returns_ordered_pages()
     {
         EnsurePg();
@@ -28,7 +24,10 @@ public sealed class EFCoreDeepTests
         // Create a course
         var course = await (await client.PostAsJsonAsync("/api/v1/courses", new
         {
-            code = "CS101", title = "Intro", credits = 3, collegeId = "college-1",
+            code = "CS101",
+            title = "Intro",
+            credits = 3,
+            collegeId = "college-1",
         })).Content.ReadFromJsonAsync<JsonElement>();
 
         // Create 5 sections
@@ -37,7 +36,10 @@ public sealed class EFCoreDeepTests
             await client.PostAsJsonAsync("/api/v1/sections", new
             {
                 courseId = course.GetProperty("id").GetGuid(),
-                sectionName = $"S{i}", semester = "2026F", capacity = 30, collegeId = "college-1",
+                sectionName = $"S{i}",
+                semester = "2026F",
+                capacity = 30,
+                collegeId = "college-1",
             });
         }
 
@@ -47,16 +49,17 @@ public sealed class EFCoreDeepTests
         Assert.Equal(2, data1.Count);
         Assert.False(string.IsNullOrWhiteSpace(page1.GetProperty("nextCursor").GetString()));
 
-        // Page 2: use lastSeenId from page1
-        var lastId = data1[^1].GetProperty("id").GetGuid();
-        var page2 = await client.GetFromJsonAsync<JsonElement>($"/api/v1/sections?lastSeenId={lastId}&limit=2");
+        // Page 2: use the opaque (CreatedAt, Id) cursor from page1.
+        var firstPageIds = data1.Select(d => d.GetProperty("id").GetGuid()).ToHashSet();
+        var cursor = page1.GetProperty("nextCursor").GetString();
+        var page2 = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/v1/sections?after={Uri.EscapeDataString(cursor!)}&limit=2");
         var data2 = page2.GetProperty("data").EnumerateArray().ToList();
         Assert.Equal(2, data2.Count);
-        // Keyset: all page2 ids > lastId
-        Assert.True(data2.All(d => d.GetProperty("id").GetGuid() > lastId));
+        Assert.DoesNotContain(data2, d => firstPageIds.Contains(d.GetProperty("id").GetGuid()));
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task N1_fix_projection_returns_single_query_data()
     {
         EnsurePg();
@@ -66,32 +69,44 @@ public sealed class EFCoreDeepTests
 
         var course = await (await client.PostAsJsonAsync("/api/v1/courses", new
         {
-            code = "N1", title = "N1 Test", credits = 2, collegeId = "college-1",
+            code = "N1",
+            title = "N1 Test",
+            credits = 2,
+            collegeId = "college-1",
         })).Content.ReadFromJsonAsync<JsonElement>();
 
         await client.PostAsJsonAsync("/api/v1/sections", new
         {
             courseId = course.GetProperty("id").GetGuid(),
-            sectionName = "S1", semester = "2026F", capacity = 10, collegeId = "college-1",
+            sectionName = "S1",
+            semester = "2026F",
+            capacity = 10,
+            collegeId = "college-1",
         });
 
-        // N+1 demo endpoint should return data
+        // N+1 demo performs 1 sections query + N course queries.
         var r1 = await client.GetAsync("/api/v1/sections/n1-demo");
         Assert.Equal(HttpStatusCode.OK, r1.StatusCode);
+        var n1 = await r1.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(
+            1 + n1.GetProperty("count").GetInt32(),
+            n1.GetProperty("queryCount").GetInt32());
 
-        // Include fix
+        // Include and projection each issue exactly one SQL query.
         var r2 = await client.GetAsync("/api/v1/sections/n1-fix-include");
         Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
+        var include = await r2.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, include.GetProperty("queryCount").GetInt32());
 
-        // Projection fix
         var r3 = await client.GetAsync("/api/v1/sections/n1-fix-projection");
         Assert.Equal(HttpStatusCode.OK, r3.StatusCode);
 
         var proj = await r3.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(proj.GetProperty("count").GetInt32() >= 1);
+        Assert.Equal(1, proj.GetProperty("queryCount").GetInt32());
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task AsSplitQuery_returns_data_without_duplication()
     {
         EnsurePg();
@@ -101,14 +116,20 @@ public sealed class EFCoreDeepTests
 
         var course = await (await client.PostAsJsonAsync("/api/v1/courses", new
         {
-            code = "SPLIT", title = "Split Test", credits = 2, collegeId = "college-1",
+            code = "SPLIT",
+            title = "Split Test",
+            credits = 2,
+            collegeId = "college-1",
         })).Content.ReadFromJsonAsync<JsonElement>();
 
         // Create section (needed for cartesian/split queries to have data)
         await client.PostAsJsonAsync("/api/v1/sections", new
         {
             courseId = course.GetProperty("id").GetGuid(),
-            sectionName = "S1", semester = "2026F", capacity = 10, collegeId = "college-1",
+            sectionName = "S1",
+            semester = "2026F",
+            capacity = 10,
+            collegeId = "college-1",
         });
 
         // Cartesian and split both return OK
@@ -118,7 +139,7 @@ public sealed class EFCoreDeepTests
         Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Optimistic_concurrency_second_write_returns_409()
     {
         EnsurePg();
@@ -128,37 +149,28 @@ public sealed class EFCoreDeepTests
 
         var course = await (await client.PostAsJsonAsync("/api/v1/courses", new
         {
-            code = "CONC", title = "Concurrency", credits = 1, collegeId = "college-1",
+            code = "CONC",
+            title = "Concurrency",
+            credits = 1,
+            collegeId = "college-1",
         })).Content.ReadFromJsonAsync<JsonElement>();
         var id = course.GetProperty("id").GetGuid();
+        var staleVersion = course.GetProperty("version").GetUInt32();
 
-        // First update succeeds (fresh xmin)
-        var r1 = await client.PutAsJsonAsync($"/api/v1/courses/{id}", new { title = "Updated1", credits = 2 });
+        // First writer succeeds with the version it read.
+        var r1 = await client.PutAsJsonAsync(
+            $"/api/v1/courses/{id}",
+            new { title = "Updated1", credits = 2, version = staleVersion });
         Assert.Equal(HttpStatusCode.OK, r1.StatusCode);
 
-        // Simulate stale context: load with a separate DbContext, keep it tracked, then update via HTTP
-        using (var scope1 = factory.Services.CreateScope())
-        {
-            var db1 = scope1.ServiceProvider.GetRequiredService<CampusDbContext>();
-            var tracked = await db1.Courses.AsTracking().FirstOrDefaultAsync(c => c.Id == id);
-            Assert.NotNull(tracked);
-            tracked!.Title = "FromStaleContext";
-
-            // Meanwhile, update via HTTP (changes the row's xmin)
-            var r2 = await client.PutAsJsonAsync($"/api/v1/courses/{id}", new { title = "ViaHttp", credits = 3 });
-            Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
-
-            // Now save the stale context → xmin mismatch → DbUpdateConcurrencyException
-            // The app's PUT endpoint catches this and returns 409.
-            // But this is a direct DbContext call, not through the endpoint.
-            // We verify the concurrency mechanism: the stale save throws.
-            var ex = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(
-                async () => await db1.SaveChangesAsync());
-            Assert.NotNull(ex);
-        }
+        // Second writer uses the stale version and the real HTTP endpoint returns 409.
+        var staleWrite = await client.PutAsJsonAsync(
+            $"/api/v1/courses/{id}",
+            new { title = "Stale", credits = 3, version = staleVersion });
+        Assert.Equal(HttpStatusCode.Conflict, staleWrite.StatusCode);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task ExecuteUpdate_bypasses_change_tracking()
     {
         EnsurePg();
@@ -168,13 +180,19 @@ public sealed class EFCoreDeepTests
 
         var course = await (await client.PostAsJsonAsync("/api/v1/courses", new
         {
-            code = "EXEC", title = "ExecuteUpdate", credits = 1, collegeId = "college-1",
+            code = "EXEC",
+            title = "ExecuteUpdate",
+            credits = 1,
+            collegeId = "college-1",
         })).Content.ReadFromJsonAsync<JsonElement>();
 
         await client.PostAsJsonAsync("/api/v1/sections", new
         {
             courseId = course.GetProperty("id").GetGuid(),
-            sectionName = "S1", semester = "2026F", capacity = 10, collegeId = "college-1",
+            sectionName = "S1",
+            semester = "2026F",
+            capacity = 10,
+            collegeId = "college-1",
         });
 
         var r = await client.PostAsync("/api/v1/sections/batch-close", null);
@@ -183,7 +201,7 @@ public sealed class EFCoreDeepTests
         Assert.True(body.GetProperty("affected").GetInt32() >= 1);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Named_filters_ignore_softdelete_preserves_tenant()
     {
         EnsurePg();
@@ -194,7 +212,10 @@ public sealed class EFCoreDeepTests
         // Create course for college-1
         await client.PostAsJsonAsync("/api/v1/courses", new
         {
-            code = "FILT", title = "Filter Test", credits = 1, collegeId = "college-1",
+            code = "FILT",
+            title = "Filter Test",
+            credits = 1,
+            collegeId = "college-1",
         });
 
         // List including deleted — should show course even if not deleted
@@ -207,7 +228,7 @@ public sealed class EFCoreDeepTests
         Assert.True(courses.All(c => c.GetProperty("collegeId").GetString() == "college-1"));
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Migrations_history_table_exists()
     {
         EnsurePg();
@@ -227,5 +248,43 @@ public sealed class EFCoreDeepTests
             var count = (long)(await cmd.ExecuteScalarAsync() ?? 0);
             Assert.True(count >= 1);
         }
+    }
+
+    [Fact]
+    public async Task Keyset_query_uses_composite_index_in_postgres_plan()
+    {
+        EnsurePg();
+        await _fx.ResetDatabaseAsync();
+        await using var conn = new Npgsql.NpgsqlConnection(_fx.ConnectionString);
+        await conn.OpenAsync();
+        await using (var disableSequentialScan = conn.CreateCommand())
+        {
+            disableSequentialScan.CommandText = "SET enable_seqscan = off";
+            await disableSequentialScan.ExecuteNonQueryAsync();
+        }
+
+        await using var explain = conn.CreateCommand();
+        explain.CommandText =
+            """
+            EXPLAIN (ANALYZE, BUFFERS)
+            SELECT s."Id"
+            FROM sections AS s
+            WHERE NOT s."IsDeleted"
+              AND s."CollegeId" = 'college-1'
+              AND s."CreatedAt" > @cursor
+            ORDER BY s."CreatedAt", s."Id"
+            LIMIT 20
+            """;
+        explain.Parameters.AddWithValue("cursor", DateTimeOffset.UtcNow.AddYears(-1));
+        var planLines = new List<string>();
+        await using var reader = await explain.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            planLines.Add(reader.GetString(0));
+        }
+
+        var plan = string.Join(Environment.NewLine, planLines);
+        Assert.Contains("Index Scan", plan, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("IX_sections_CreatedAt_Id", plan, StringComparison.Ordinal);
     }
 }

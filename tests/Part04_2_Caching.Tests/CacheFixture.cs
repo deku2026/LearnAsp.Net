@@ -1,13 +1,10 @@
 using System.Net.Sockets;
-using Campus.Testing;
 using Docker.DotNet;
 using DotNet.Testcontainers.Builders;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
-using Part04_2_Caching;
 using Testcontainers.PostgreSql;
 
 namespace Part04_2_Caching.Tests;
@@ -19,8 +16,10 @@ public sealed class CacheFixture : IAsyncLifetime
     public string PgConnectionString { get; private set; } = "";
     public bool IsAvailable { get; private set; }
     public string? SkipReason { get; private set; }
+    public bool IsRedisAvailable { get; private set; }
+    public string? RedisSkipReason { get; private set; }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // 1) Try Testcontainers
         try
@@ -44,9 +43,10 @@ public sealed class CacheFixture : IAsyncLifetime
         // 2) Fallback: local PG
         if (_container is null)
         {
-            PgConnectionString = Environment.GetEnvironmentVariable("CAMPUS_CACHE_TEST_PG")
-                                 ?? Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
-                                 ?? "Host=localhost;Port=5432;Database=campus_cache_test;Username=dotnet;Password=dotnet_dev";
+            PgConnectionString = FirstNonEmpty(
+                Environment.GetEnvironmentVariable("CAMPUS_CACHE_TEST_PG"),
+                Environment.GetEnvironmentVariable("CAMPUS_TEST_PG"),
+                "Host=localhost;Port=5432;Database=campus_cache_test;Username=dotnet;Password=dotnet_dev");
             try
             {
                 await EnsureDatabaseExistsAsync(PgConnectionString);
@@ -67,8 +67,7 @@ public sealed class CacheFixture : IAsyncLifetime
             var options = new DbContextOptionsBuilder<CacheDbContext>()
                 .UseNpgsql(PgConnectionString).Options;
             await using var db = new CacheDbContext(options);
-            try { await db.Database.MigrateAsync(); }
-            catch (NpgsqlException) { await db.Database.EnsureDeletedAsync(); await db.Database.MigrateAsync(); }
+            await db.Database.MigrateAsync();
             IsAvailable = true;
         }
         catch (NpgsqlException ex)
@@ -81,27 +80,44 @@ public sealed class CacheFixture : IAsyncLifetime
             IsAvailable = false;
             SkipReason = $"Migration invalid op: {ex.Message}";
         }
+
+        try
+        {
+            using var redisProbe = new TcpClient();
+            await redisProbe.ConnectAsync("127.0.0.1", 6380).WaitAsync(TimeSpan.FromSeconds(2));
+            IsRedisAvailable = true;
+        }
+        catch (SocketException ex)
+        {
+            RedisSkipReason = $"Redis unavailable: {ex.Message}";
+        }
+        catch (TimeoutException ex)
+        {
+            RedisSkipReason = $"Redis probe timed out: {ex.Message}";
+        }
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_container is not null) await _container.DisposeAsync();
     }
 
-    public WebApplicationFactory<Program> CreateFactory()
+    public WebApplicationFactory<Program> CreateFactory(
+        bool useRedisL2 = false,
+        string redisConnectionString = "127.0.0.1:6380,abortConnect=false")
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseSetting("ConnectionStrings:Campus", PgConnectionString);
-            b.UseSetting("ConnectionStrings:Redis", "127.0.0.1:6380,abortConnect=false");
-            b.UseSetting("Cache:UseRedisL2", "false");
+            b.UseSetting("ConnectionStrings:Redis", redisConnectionString);
+            b.UseSetting("Cache:UseRedisL2", useRedisL2.ToString());
             b.ConfigureAppConfiguration((_, cfg) =>
             {
                 cfg.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:Campus"] = PgConnectionString,
-                    ["ConnectionStrings:Redis"] = "127.0.0.1:6380,abortConnect=false",
-                    ["Cache:UseRedisL2"] = "false",
+                    ["ConnectionStrings:Redis"] = redisConnectionString,
+                    ["Cache:UseRedisL2"] = useRedisL2.ToString(),
                 });
             });
         });
@@ -132,9 +148,12 @@ public sealed class CacheFixture : IAsyncLifetime
             if (await exists.ExecuteScalarAsync() is not null) return;
         }
         await using var create = conn.CreateCommand();
-        create.CommandText = $"CREATE DATABASE \"{dbName}\"";
+        create.CommandText = $"CREATE DATABASE \"{dbName.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         await create.ExecuteNonQueryAsync();
     }
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.First(value => !string.IsNullOrWhiteSpace(value))!;
 }
 
 [CollectionDefinition("cache")]
@@ -144,7 +163,6 @@ public static class CacheSkip
 {
     public static void IfNotAvailable(CacheFixture fx)
     {
-        if (!fx.IsAvailable)
-            global::Xunit.Skip.If(fx.SkipReason is not null, fx.SkipReason ?? "PostgreSQL unavailable");
+        Assert.SkipWhen(!fx.IsAvailable, fx.SkipReason ?? "PostgreSQL unavailable");
     }
 }

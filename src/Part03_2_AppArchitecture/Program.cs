@@ -80,6 +80,10 @@ api.MapPost("/enrollments", async (CreateEnrollmentReq req, IEnrollmentModule en
     {
         return Results.NotFound();
     }
+    catch (InvalidOperationException ex) when (ex.Message == Campus.Contracts.ErrorCodes.EnrollmentDuplicate)
+    {
+        return Results.Conflict(new { errorCode = Campus.Contracts.ErrorCodes.EnrollmentDuplicate });
+    }
 });
 
 api.MapGet("/enrollments", async (Guid? studentId, IEnrollmentModule enrollment) =>

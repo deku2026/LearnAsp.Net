@@ -1,10 +1,14 @@
 using System.Net.Sockets;
+using Campus.Testing;
 using Docker.DotNet;
 using DotNet.Testcontainers.Builders;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Respawn;
 using Step09_IntegrationTesting.Data;
@@ -22,7 +26,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     public bool IsAvailable { get; private set; }
     public string? SkipReason { get; private set; }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         if (!await TryStartTestcontainerAsync() && !await TryConnectLocalPostgresAsync())
         {
@@ -55,6 +59,12 @@ public sealed class PostgresFixture : IAsyncLifetime
         await test(factory);
     }
 
+    public async Task UsingJwtFactoryAsync(Func<WebApplicationFactory<Program>, Task> test)
+    {
+        await using var factory = new Step09WebApplicationFactory(_connectionString, useTestAuthentication: false);
+        await test(factory);
+    }
+
     public async Task ResetAsync()
     {
         if (!IsAvailable)
@@ -76,7 +86,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_container is not null)
         {
@@ -145,8 +155,10 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     private async Task<bool> TryConnectLocalPostgresAsync()
     {
-        var fallback = Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
-                       ?? "Host=localhost;Port=5432;Database=campus_step09_it;Username=dotnet;Password=dotnet_dev";
+        var fallback = FirstNonEmpty(
+            Environment.GetEnvironmentVariable("CAMPUS_STEP09_TEST_PG"),
+            Environment.GetEnvironmentVariable("CAMPUS_TEST_PG"),
+            "Host=localhost;Port=5432;Database=campus_step09_it;Username=dotnet;Password=dotnet_dev");
         try
         {
             await EnsureDatabaseExistsAsync(fallback);
@@ -226,7 +238,12 @@ public sealed class PostgresFixture : IAsyncLifetime
         await create.ExecuteNonQueryAsync();
     }
 
-    private sealed class Step09WebApplicationFactory(string connectionString) : WebApplicationFactory<Program>
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.First(value => !string.IsNullOrWhiteSpace(value))!;
+
+    private sealed class Step09WebApplicationFactory(
+        string connectionString,
+        bool useTestAuthentication = true) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -239,6 +256,21 @@ public sealed class PostgresFixture : IAsyncLifetime
                     ["ConnectionStrings:Postgres"] = connectionString,
                 });
             });
+            if (useTestAuthentication)
+            {
+                builder.ConfigureTestServices(services =>
+                {
+                    services.AddAuthentication(options =>
+                        {
+                            options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
+                            options.DefaultChallengeScheme = TestAuthHandler.SchemeName;
+                            options.DefaultForbidScheme = TestAuthHandler.SchemeName;
+                        })
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                            TestAuthHandler.SchemeName,
+                            _ => { });
+                });
+            }
         }
     }
 }

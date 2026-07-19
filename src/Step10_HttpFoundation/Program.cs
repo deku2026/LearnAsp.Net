@@ -1,10 +1,11 @@
 using System.Net;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
 using Step10_HttpFoundation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-const long MaxRequestBodyBytes = 64 * 1024;
+const long MaxRequestBodyBytes = 1024;
 const int MaxConcurrentConnections = 256;
 
 builder.WebHost.ConfigureKestrel(options =>
@@ -13,8 +14,6 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = MaxRequestBodyBytes;
     options.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(30);
     options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(15);
-    // Explicit HTTP/1.1+HTTP/2 awareness (HTTP/3 needs QUIC + alpn, out of scope for lab).
-    options.ListenLocalhost(5010, lo => lo.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1AndHttp2);
 });
 
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
@@ -42,18 +41,27 @@ builder.Services.AddHttpContextAccessor();
 
 var catalogBase = builder.Configuration["ExternalCatalog:BaseUrl"] ?? "http://127.0.0.1:9/";
 builder.Services.AddTransient<CorrelationIdHandler>();
+builder.Services.AddTransient<CatalogAuthHeaderHandler>();
 builder.Services.AddHttpClient<IExternalCatalogClient, ExternalCatalogClient>(client =>
     {
         client.BaseAddress = new Uri(catalogBase);
         client.Timeout = TimeSpan.FromSeconds(10);
     })
     .AddHttpMessageHandler<CorrelationIdHandler>()
+    .AddHttpMessageHandler<CatalogAuthHeaderHandler>()
     .AddStandardResilienceHandler(pipeline =>
     {
         pipeline.Retry.MaxRetryAttempts = 2;
-        pipeline.AttemptTimeout.Timeout = TimeSpan.FromSeconds(3);
-        pipeline.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(10);
-        pipeline.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
+        pipeline.AttemptTimeout.Timeout = TimeSpan.FromMilliseconds(
+            builder.Configuration.GetValue("Resilience:AttemptTimeoutMs", 3000));
+        pipeline.TotalRequestTimeout.Timeout = TimeSpan.FromMilliseconds(
+            builder.Configuration.GetValue("Resilience:TotalTimeoutMs", 10000));
+        pipeline.CircuitBreaker.SamplingDuration = TimeSpan.FromMilliseconds(
+            builder.Configuration.GetValue("Resilience:CircuitSamplingMs", 30000));
+        pipeline.CircuitBreaker.MinimumThroughput =
+            builder.Configuration.GetValue("Resilience:CircuitMinimumThroughput", 100);
+        pipeline.CircuitBreaker.BreakDuration = TimeSpan.FromMilliseconds(
+            builder.Configuration.GetValue("Resilience:CircuitBreakMs", 5000));
     });
 
 var app = builder.Build();
@@ -75,8 +83,21 @@ app.MapGet("/http-version", (HttpContext ctx) => Results.Ok(new { protocol = ctx
 app.MapGet("/remote-ip", (HttpContext ctx) => Results.Ok(new
 {
     remoteIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+    scheme = ctx.Request.Scheme,
     forwardedFor = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault() ?? "",
 }));
+
+app.MapPost("/upload", async (HttpRequest request, CancellationToken ct) =>
+{
+    await request.Body.CopyToAsync(Stream.Null, ct);
+    return Results.Ok(new { accepted = request.ContentLength ?? 0 });
+});
+
+app.MapPost("/upload/large", async (HttpRequest request, CancellationToken ct) =>
+{
+    await request.Body.CopyToAsync(Stream.Null, ct);
+    return Results.Ok(new { accepted = request.ContentLength ?? 0 });
+}).WithMetadata(new RequestSizeLimitAttribute(128 * 1024));
 
 app.MapGet("/proxy/catalog/{code}", async (string code, IExternalCatalogClient catalog, CancellationToken ct) =>
 {
@@ -107,7 +128,28 @@ public sealed class CorrelationIdHandler(IHttpContextAccessor accessor) : Delega
             ctx.Request.Headers.TryGetValue("X-Correlation-ID", out var inbound) &&
             !string.IsNullOrWhiteSpace(inbound))
         {
-            request.Headers.TryAddWithoutValidation("X-Correlation-ID", inbound.ToString());
+            var correlationId = inbound.ToString();
+            if (correlationId.Length <= 128 && correlationId.All(ch => !char.IsControl(ch)))
+            {
+                request.Headers.TryAddWithoutValidation("X-Correlation-ID", correlationId);
+            }
+        }
+
+        return base.SendAsync(request, cancellationToken);
+    }
+}
+
+/// <summary>Adds the external catalog credential in one outbound handler instead of at call sites.</summary>
+public sealed class CatalogAuthHeaderHandler(IConfiguration configuration) : DelegatingHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        var apiKey = configuration["ExternalCatalog:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            request.Headers.TryAddWithoutValidation("X-Catalog-Key", apiKey);
         }
 
         return base.SendAsync(request, cancellationToken);

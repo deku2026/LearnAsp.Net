@@ -34,3 +34,15 @@ public sealed class Course
 }
 
 public sealed record CourseDto(Guid Id, string Code, string Title, int Credits, string CollegeId);
+
+public sealed class CacheQueryMetrics
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _counts =
+        new(StringComparer.Ordinal);
+
+    public int Get(string operation) => _counts.GetValueOrDefault(operation);
+
+    public void Increment(string operation) => _counts.AddOrUpdate(operation, 1, (_, count) => count + 1);
+
+    public void Reset(string operation) => _counts[operation] = 0;
+}

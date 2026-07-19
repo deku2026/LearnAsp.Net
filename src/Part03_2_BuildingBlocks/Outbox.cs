@@ -27,6 +27,7 @@ public sealed class InMemoryOutbox : IOutbox
         return Task.CompletedTask;
     }
 
+    public bool TryPeek(out OutboxMessage message) => _queue.TryPeek(out message!);
     public bool TryDequeue(out OutboxMessage message) => _queue.TryDequeue(out message!);
 }
 
@@ -41,17 +42,27 @@ public sealed class OutboxProcessor(
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            while (outbox.TryDequeue(out var msg))
+            while (outbox.TryPeek(out var msg))
             {
+                var handled = false;
                 try
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
-                    var handlers = scope.ServiceProvider.GetServices<IOutboxMessageHandler>();
-                    var handler = handlers.FirstOrDefault(h => string.Equals(h.MessageType, msg.Type, StringComparison.Ordinal));
-                    if (handler is not null)
+                    var handlers = scope.ServiceProvider.GetServices<IOutboxMessageHandler>()
+                        .Where(h => string.Equals(h.MessageType, msg.Type, StringComparison.Ordinal))
+                        .ToList();
+                    if (handlers.Count == 0)
+                    {
+                        logger.LogWarning("No outbox handler registered for {MessageType}", msg.Type);
+                        break;
+                    }
+
+                    foreach (var handler in handlers)
                     {
                         await handler.HandleAsync(msg.PayloadJson, stoppingToken);
                     }
+
+                    handled = true;
                 }
                 catch (JsonException ex)
                 {
@@ -65,6 +76,15 @@ public sealed class OutboxProcessor(
                 {
                     return;
                 }
+
+                if (!handled)
+                {
+                    // Keep the message at the head of the queue. This gives at-least-once
+                    // delivery inside the process instead of losing it on the first failure.
+                    break;
+                }
+
+                _ = outbox.TryDequeue(out _);
             }
 
             try

@@ -1,13 +1,10 @@
 using System.Net.Sockets;
-using Campus.Testing;
 using Docker.DotNet;
 using DotNet.Testcontainers.Builders;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
-using Part04_1_EFCore;
 using Testcontainers.PostgreSql;
 
 namespace Part04_1_EFCore.Tests;
@@ -20,7 +17,7 @@ public sealed class PgFixture : IAsyncLifetime
     public bool IsAvailable { get; private set; }
     public string? SkipReason { get; private set; }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // 1) Try Testcontainers (works on Linux CI with Docker)
         try
@@ -72,8 +69,10 @@ public sealed class PgFixture : IAsyncLifetime
         // 2) Fallback: local PG on localhost:5432
         if (_container is null)
         {
-            ConnectionString = Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
-                               ?? "Host=localhost;Port=5432;Database=campus_w5_test;Username=dotnet;Password=dotnet_dev";
+            ConnectionString = FirstNonEmpty(
+                Environment.GetEnvironmentVariable("CAMPUS_EFCORE_TEST_PG"),
+                Environment.GetEnvironmentVariable("CAMPUS_TEST_PG"),
+                "Host=localhost;Port=5432;Database=campus_w5_test;Username=dotnet;Password=dotnet_dev");
             try
             {
                 await EnsureDatabaseExistsAsync(ConnectionString);
@@ -104,15 +103,7 @@ public sealed class PgFixture : IAsyncLifetime
             var options = new DbContextOptionsBuilder<CampusDbContext>()
                 .UseNpgsql(ConnectionString).Options;
             await using var db = new CampusDbContext(options);
-            try
-            {
-                await db.Database.MigrateAsync();
-            }
-            catch (NpgsqlException)
-            {
-                await db.Database.EnsureDeletedAsync();
-                await db.Database.MigrateAsync();
-            }
+            await db.Database.MigrateAsync();
             IsAvailable = true;
         }
         catch (NpgsqlException ex)
@@ -127,7 +118,7 @@ public sealed class PgFixture : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_container is not null)
             await _container.DisposeAsync();
@@ -173,9 +164,12 @@ public sealed class PgFixture : IAsyncLifetime
             if (await exists.ExecuteScalarAsync() is not null) return;
         }
         await using var create = conn.CreateCommand();
-        create.CommandText = $"CREATE DATABASE \"{dbName}\"";
+        create.CommandText = $"CREATE DATABASE \"{dbName.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         await create.ExecuteNonQueryAsync();
     }
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.First(value => !string.IsNullOrWhiteSpace(value))!;
 }
 
 [CollectionDefinition("pg")]
@@ -185,7 +179,6 @@ public static class Skip
 {
     public static void IfNotAvailable(PgFixture fx)
     {
-        if (!fx.IsAvailable)
-            global::Xunit.Skip.If(fx.SkipReason is not null, fx.SkipReason ?? "PostgreSQL unavailable");
+        Assert.SkipWhen(!fx.IsAvailable, fx.SkipReason ?? "PostgreSQL unavailable");
     }
 }
