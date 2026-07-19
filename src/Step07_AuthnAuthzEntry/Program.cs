@@ -5,50 +5,38 @@
 
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Campus.Contracts;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
-using Step07_AuthnAuthzEntry;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var jwtSection = builder.Configuration.GetSection("Jwt");
-var signingKey = jwtSection["SigningKey"] ?? "campus-dev-signing-key-at-least-32-bytes!!";
-var issuer = jwtSection["Issuer"] ?? "campus-dev";
-var audience = jwtSection["Audience"] ?? "campus-api";
-
 builder.Services
-    .AddAuthentication(options =>
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, _ => { });
+builder.Services
+    .AddOptions<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+        JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IConfiguration, IHostEnvironment>((options, configuration, environment) =>
     {
-        options.DefaultAuthenticateScheme = "smart";
-        options.DefaultChallengeScheme = "smart";
-    })
-    .AddPolicyScheme("smart", "JWT or Test", options =>
-    {
-        options.ForwardDefaultSelector = context =>
-            context.Request.Headers.ContainsKey("X-Test-User")
-                ? DevTestAuthHandler.SchemeName
-                : JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
-    {
+        var settings = JwtLabSettings.Create(configuration, environment);
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateIssuerSigningKey = true,
             ValidateLifetime = true,
-            ValidIssuer = issuer,
-            ValidAudience = audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+            ValidIssuer = settings.Issuer,
+            ValidAudience = settings.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(settings.SigningKeyBytes),
             RoleClaimType = ClaimTypes.Role,
             NameClaimType = "sub",
+            ClockSkew = TimeSpan.FromSeconds(30),
         };
-    })
-    .AddScheme<AuthenticationSchemeOptions, DevTestAuthHandler>(DevTestAuthHandler.SchemeName, _ => { });
+    });
 
 builder.Services.AddAuthorization(options =>
 {
@@ -63,6 +51,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddSingleton<EnrollmentBook>();
 
 var app = builder.Build();
+var jwtSettings = JwtLabSettings.Create(app.Configuration, app.Environment);
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -88,27 +77,49 @@ app.MapPost("/api/v1/courses", (CreateCourseRequest request) =>
 app.MapPost("/api/v1/enrollments", (CreateEnrollmentRequest request, ClaimsPrincipal user, EnrollmentBook book) =>
 {
     var sub = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
-    var enrollment = book.Add(request.StudentId == Guid.Empty ? Guid.Parse(PadGuid(sub)) : request.StudentId, request.SectionId);
+    var authenticatedStudentId = Guid.Parse(PadGuid(sub));
+    if (request.StudentId != Guid.Empty && request.StudentId != authenticatedStudentId)
+    {
+        return Results.Forbid();
+    }
+
+    var enrollment = book.Add(authenticatedStudentId, request.SectionId);
     return Results.Created($"/api/v1/enrollments/{enrollment.Id}", enrollment);
 }).RequireAuthorization("CanEnroll");
 
+app.MapGet("/api/v1/default-protected", () => Results.Ok(new { securedBy = "fallback-policy" }));
 app.MapGet("/api/v1/enrollments/public-count", (EnrollmentBook book) => Results.Ok(new { count = book.Count })).AllowAnonymous();
 
-app.MapPost("/token/dev", (DevTokenRequest body) =>
+if (app.Environment.IsDevelopment())
 {
-    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
-    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-    var claims = new List<Claim>
+    app.MapPost("/token/dev", (DevTokenRequest body) =>
     {
-        new("sub", body.Sub),
-        new(ClaimTypes.NameIdentifier, body.Sub),
-        new(ClaimTypes.Role, body.Role),
-        new("role", body.Role),
-        new("college_id", body.CollegeId),
-    };
-    var token = new JwtSecurityToken(issuer, audience, claims, expires: DateTime.UtcNow.AddHours(2), signingCredentials: creds);
-    return Results.Ok(new { access_token = new JwtSecurityTokenHandler().WriteToken(token) });
-}).AllowAnonymous();
+        if (string.IsNullOrWhiteSpace(body.Sub) ||
+            body.Role is not ("Student" or "Admin") ||
+            string.IsNullOrWhiteSpace(body.CollegeId))
+        {
+            return Results.BadRequest(new { errorCode = ErrorCodes.ValidationFailed });
+        }
+
+        var key = new SymmetricSecurityKey(jwtSettings.SigningKeyBytes);
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var claims = new List<Claim>
+        {
+            new("sub", body.Sub),
+            new(ClaimTypes.NameIdentifier, body.Sub),
+            new(ClaimTypes.Role, body.Role),
+            new("role", body.Role),
+            new("college_id", body.CollegeId),
+        };
+        var token = new JwtSecurityToken(
+            jwtSettings.Issuer,
+            jwtSettings.Audience,
+            claims,
+            expires: DateTime.UtcNow.AddMinutes(30),
+            signingCredentials: creds);
+        return Results.Ok(new { access_token = new JwtSecurityTokenHandler().WriteToken(token) });
+    }).AllowAnonymous();
+}
 
 app.Run();
 
@@ -122,10 +133,46 @@ public partial class Program;
 
 public sealed record DevTokenRequest(string Sub, string Role, string CollegeId);
 
+public sealed record JwtLabSettings(string Issuer, string Audience, byte[] SigningKeyBytes)
+{
+    private static readonly byte[] DevelopmentSigningKey = RandomNumberGenerator.GetBytes(32);
+
+    public static JwtLabSettings Create(IConfiguration configuration, IHostEnvironment environment)
+    {
+        var section = configuration.GetSection("Jwt");
+        var configuredSigningKey = section["SigningKey"];
+        byte[] signingKeyBytes;
+        if (string.IsNullOrWhiteSpace(configuredSigningKey))
+        {
+            if (!environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "Jwt:SigningKey is required outside Development. Use an environment variable or secret store.");
+            }
+
+            signingKeyBytes = DevelopmentSigningKey;
+        }
+        else
+        {
+            if (Encoding.UTF8.GetByteCount(configuredSigningKey) < 32)
+            {
+                throw new InvalidOperationException("Jwt:SigningKey must contain at least 32 UTF-8 bytes.");
+            }
+
+            signingKeyBytes = Encoding.UTF8.GetBytes(configuredSigningKey);
+        }
+
+        return new JwtLabSettings(
+            section["Issuer"] ?? "campus-dev",
+            section["Audience"] ?? "campus-api",
+            signingKeyBytes);
+    }
+}
+
 public sealed class EnrollmentBook
 {
     private int _count;
-    public int Count => _count;
+    public int Count => Volatile.Read(ref _count);
 
     public EnrollmentDto Add(Guid studentId, Guid sectionId)
     {

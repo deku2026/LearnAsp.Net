@@ -41,7 +41,9 @@ public sealed class RoutingTests : IClassFixture<CampusWebApplicationFactory<Pro
 
     [Theory]
     [InlineData("2026S1", HttpStatusCode.OK)]
-    [InlineData("2026F2", HttpStatusCode.OK)]
+    [InlineData("2026S2", HttpStatusCode.OK)]
+    [InlineData("2026F", HttpStatusCode.OK)]
+    [InlineData("2026F2", HttpStatusCode.NotFound)]
     [InlineData("invalid", HttpStatusCode.NotFound)]
     public async Task Custom_constraint_matches_term_codes(string term, HttpStatusCode expected)
     {

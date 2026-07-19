@@ -13,10 +13,16 @@ public sealed class DiOptionsTests
     {
         await using var factory = new CampusWebApplicationFactory<Program>();
         var client = factory.CreateClient();
-        var json = await client.GetFromJsonAsync<JsonElement>("/di-demo");
-        Assert.False(json.GetProperty("transient").GetProperty("same").GetBoolean());
-        Assert.True(json.GetProperty("scoped").GetProperty("same").GetBoolean());
-        Assert.NotEqual(Guid.Empty, json.GetProperty("singleton").GetGuid());
+        var first = await client.GetFromJsonAsync<JsonElement>("/di-demo");
+        var second = await client.GetFromJsonAsync<JsonElement>("/di-demo");
+        Assert.False(first.GetProperty("transient").GetProperty("same").GetBoolean());
+        Assert.True(first.GetProperty("scoped").GetProperty("same").GetBoolean());
+        Assert.NotEqual(
+            first.GetProperty("scoped").GetProperty("first").GetGuid(),
+            second.GetProperty("scoped").GetProperty("first").GetGuid());
+        Assert.Equal(
+            first.GetProperty("singleton").GetGuid(),
+            second.GetProperty("singleton").GetGuid());
     }
 
     [Fact]
@@ -81,7 +87,28 @@ public sealed class DiOptionsTests
         await using var factory = new CampusWebApplicationFactory<Program>();
         var client = factory.CreateClient();
         var json = await client.GetFromJsonAsync<JsonElement>("/captive-demo");
-        Assert.True(json.GetProperty("resolvedIds").GetArrayLength() >= 1);
+        var ids = json.GetProperty("resolvedIds");
+        Assert.Equal(2, ids.GetArrayLength());
+        Assert.NotEqual(ids[0].GetGuid(), ids[1].GetGuid());
+    }
+
+    [Fact]
+    public void Captive_dependency_is_rejected_by_scope_validation()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<Step02_DIConfigOptions.ScopedMarker>();
+        services.AddSingleton<Step02_DIConfigOptions.CaptiveSingleton>();
+
+        var exception = Assert.Throws<AggregateException>(() =>
+            services.BuildServiceProvider(new ServiceProviderOptions
+            {
+                ValidateScopes = true,
+                ValidateOnBuild = true,
+            }));
+        Assert.Contains(
+            "Cannot consume scoped service",
+            exception.ToString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]

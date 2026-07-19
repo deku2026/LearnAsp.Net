@@ -20,6 +20,8 @@ public sealed class HostStartupTests : IClassFixture<CampusWebApplicationFactory
     {
         var response = await _client.GetAsync("/");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Hello from Development", payload.GetProperty("greeting").GetString());
     }
 
     [Fact]

@@ -21,8 +21,14 @@ builder.Services.AddProblemDetails(options =>
         ctx.ProblemDetails.Extensions["errorCode"] =
             ctx.HttpContext.Items.TryGetValue("errorCode", out var code) && code is string s
                 ? s
-                : ErrorCodes.ValidationFailed;
+                : ctx.ProblemDetails.Status switch
+                {
+                    StatusCodes.Status404NotFound => ErrorCodes.NotFound,
+                    >= StatusCodes.Status500InternalServerError => ErrorCodes.InternalError,
+                    _ => ErrorCodes.ValidationFailed,
+                };
         ctx.ProblemDetails.Extensions["traceId"] = ctx.HttpContext.TraceIdentifier;
+        ctx.ProblemDetails.Instance = ctx.HttpContext.Request.Path;
     };
 });
 builder.Services.AddValidatorsFromAssemblyContaining<CreateSectionBodyValidator>();
@@ -47,25 +53,10 @@ api.MapPost("/courses", ([FromBody] CreateCourseBody body, CourseBook book) =>
     return Results.Created($"/api/v1/courses/{created.Id}", created);
 });
 
-api.MapPost("/sections", async Task<Results<Created<SectionDto>, ValidationProblem, NotFound<ProblemDetails>>> (
+api.MapPost("/sections", Results<Created<SectionDto>, NotFound<ProblemDetails>> (
     [FromBody] CreateSectionBody body,
-    IValidator<CreateSectionBody> validator,
-    CourseBook book,
-    HttpContext http) =>
+    CourseBook book) =>
 {
-    var result = await validator.ValidateAsync(body);
-    if (!result.IsValid)
-    {
-        http.Items["errorCode"] = result.Errors.FirstOrDefault()?.ErrorCode ?? ErrorCodes.ValidationFailed;
-        var errors = result.Errors
-            .GroupBy(e => e.PropertyName)
-            .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray());
-        return TypedResults.ValidationProblem(errors, extensions: new Dictionary<string, object?>
-        {
-            ["errorCode"] = http.Items["errorCode"],
-        });
-    }
-
     try
     {
         var section = book.AddSection(body.CourseId, body.Term, body.Capacity);
@@ -80,7 +71,7 @@ api.MapPost("/sections", async Task<Results<Created<SectionDto>, ValidationProbl
             Extensions = { ["errorCode"] = ErrorCodes.NotFound },
         });
     }
-});
+}).AddEndpointFilter<FluentValidationFilter<CreateSectionBody>>();
 
 api.MapGet("/courses/{id:guid}", (Guid id, CourseBook book) =>
 {
@@ -112,6 +103,7 @@ public partial class Program;
 
 public sealed class CourseBook
 {
+    private readonly object _stateLock = new();
     private readonly ConcurrentDictionary<Guid, CourseDto> _courses = new();
     private readonly ConcurrentDictionary<Guid, SectionDto> _sections = new();
 
@@ -126,19 +118,38 @@ public sealed class CourseBook
 
     public SectionDto AddSection(Guid courseId, string term, int capacity)
     {
-        if (!_courses.ContainsKey(courseId))
+        lock (_stateLock)
         {
-            throw new KeyNotFoundException();
-        }
+            if (!_courses.ContainsKey(courseId))
+            {
+                throw new KeyNotFoundException();
+            }
 
-        var dto = new SectionDto(Guid.NewGuid(), courseId, term.Trim(), capacity, capacity);
-        _sections[dto.Id] = dto;
-        return dto;
+            if (_sections.Values.Any(section =>
+                    section.CourseId == courseId &&
+                    string.Equals(section.Term, term, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException("A section already exists for this course and term.");
+            }
+
+            var dto = new SectionDto(Guid.NewGuid(), courseId, term.Trim(), capacity, capacity);
+            _sections[dto.Id] = dto;
+            return dto;
+        }
+    }
+
+    public Task<bool> IsSectionUniqueAsync(Guid courseId, string term, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var unique = !_sections.Values.Any(section =>
+            section.CourseId == courseId &&
+            string.Equals(section.Term, term, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(unique);
     }
 }
 
 /// <summary>IExceptionHandler: maps exceptions to ProblemDetails with stable errorCode.</summary>
-public sealed class LabExceptionHandler(IHostEnvironment env)
+public sealed class LabExceptionHandler(IHostEnvironment env, IProblemDetailsService problemDetailsService)
     : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
@@ -152,19 +163,53 @@ public sealed class LabExceptionHandler(IHostEnvironment env)
 
         httpContext.Items["errorCode"] = errorCode;
         httpContext.Response.StatusCode = status;
-        httpContext.Response.ContentType = "application/problem+json";
-
-        var problem = new
+        await problemDetailsService.WriteAsync(new ProblemDetailsContext
         {
-            type = $"https://httpstatuses.com/{status}",
-            title,
-            status,
-            detail = env.IsDevelopment() ? exception.Message : null,
-            errorCode,
-            traceId = httpContext.TraceIdentifier,
-        };
-
-        await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken);
+            HttpContext = httpContext,
+            Exception = exception,
+            ProblemDetails = new ProblemDetails
+            {
+                Type = $"https://httpstatuses.com/{status}",
+                Title = title,
+                Status = status,
+                Detail = env.IsDevelopment() ? exception.Message : null,
+            },
+        });
         return true;
+    }
+}
+
+/// <summary>Runs FluentValidation asynchronously as an endpoint filter.</summary>
+public sealed class FluentValidationFilter<T>(IValidator<T> validator) : IEndpointFilter
+    where T : class
+{
+    public async ValueTask<object?> InvokeAsync(
+        EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
+    {
+        var model = context.Arguments.OfType<T>().FirstOrDefault();
+        if (model is null)
+        {
+            return await next(context);
+        }
+
+        var result = await validator.ValidateAsync(model, context.HttpContext.RequestAborted);
+        if (result.IsValid)
+        {
+            return await next(context);
+        }
+
+        var errors = result.Errors
+            .GroupBy(error => error.PropertyName)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(error => error.ErrorMessage).ToArray());
+        var errorCode = result.Errors.FirstOrDefault()?.ErrorCode ?? ErrorCodes.ValidationFailed;
+        context.HttpContext.Items["errorCode"] = errorCode;
+        return TypedResults.ValidationProblem(errors, extensions: new Dictionary<string, object?>
+        {
+            ["errorCode"] = errorCode,
+            ["traceId"] = context.HttpContext.TraceIdentifier,
+        });
     }
 }

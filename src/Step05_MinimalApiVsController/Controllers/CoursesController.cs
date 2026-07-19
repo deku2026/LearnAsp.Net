@@ -1,5 +1,8 @@
+using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using Campus.Contracts;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Step05_MinimalApiVsController.Controllers;
 
@@ -18,14 +21,59 @@ public sealed class CoursesController(CampusStore store) : ControllerBase
     }
 
     [HttpPost]
-    public ActionResult<CourseDto> Create([FromBody] CreateCourseRequest request)
+    public ActionResult<CourseDto> Create([FromBody] ControllerCreateCourseRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Title) || request.Credits < 1)
+        var created = store.AddCourse(new CreateCourseRequest(request.Code, request.Title, request.Credits));
+        return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+    }
+
+    [HttpGet("throw")]
+    public ActionResult Throw() => throw new InvalidOperationException("controller-lab-error");
+}
+
+public sealed record ControllerCreateCourseRequest(
+    [Required, MinLength(2), MaxLength(16)] string Code,
+    [Required, MinLength(2), MaxLength(200)] string Title,
+    [Range(1, 10)] int Credits);
+
+public sealed class ControllerResourceFilter : IAsyncResourceFilter
+{
+    public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
+    {
+        context.HttpContext.Response.Headers["X-Controller-Resource-Filter"] = "applied";
+        await next();
+    }
+}
+
+public sealed class ControllerTimingFilter : IAsyncActionFilter
+{
+    public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        await next();
+        context.HttpContext.Response.Headers["X-Controller-Elapsed-ms"] =
+            stopwatch.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+}
+
+public sealed class ControllerExceptionFilter : IExceptionFilter
+{
+    public void OnException(ExceptionContext context)
+    {
+        if (context.Exception is not InvalidOperationException)
         {
-            return BadRequest(new { errorCode = ErrorCodes.ValidationFailed });
+            return;
         }
 
-        var created = store.AddCourse(request);
-        return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+        context.Result = new ObjectResult(new ProblemDetails
+        {
+            Title = "Controller operation failed",
+            Status = StatusCodes.Status500InternalServerError,
+            Extensions = { ["errorCode"] = ErrorCodes.InternalError },
+        })
+        {
+            StatusCode = StatusCodes.Status500InternalServerError,
+        };
+        context.ExceptionHandled = true;
     }
 }

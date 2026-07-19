@@ -4,6 +4,7 @@
 // Title : 中间件管道
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Campus.Contracts;
 
@@ -23,20 +24,6 @@ var app = builder.Build();
 
 // ShortCircuit: 404 for favicon without running auth (must be early).
 app.MapShortCircuit(StatusCodes.Status404NotFound, "/favicon.ico");
-
-// Auth-order experiment: when flag is set, deliberately put UseAuthorization BEFORE UseAuthentication.
-if (app.Configuration["Lab:AuthOrderExperiment"] == "true")
-{
-    // WRONG order: authz before authn → [Authorize] endpoints return 401 even with valid token.
-    app.UseAuthorization();
-    app.UseAuthentication();
-}
-else
-{
-    // Correct order: authn before authz.
-    app.UseAuthentication();
-    app.UseAuthorization();
-}
 
 // Exception middleware (outermost)
 app.Use(async (context, next) =>
@@ -72,17 +59,23 @@ app.Use(async (context, next) =>
     }
 });
 
-// Timing middleware
-app.Use(async (context, next) =>
+// Conventional class middleware: constructed once, so request-scoped dependencies
+// belong on InvokeAsync parameters (or use IMiddleware as shown below).
+app.UseRequestTiming();
+
+// Auth-order experiment: when flag is set, deliberately put UseAuthorization BEFORE UseAuthentication.
+if (app.Configuration["Lab:AuthOrderExperiment"] == "true")
 {
-    var sw = Stopwatch.StartNew();
-    context.Response.OnStarting(() =>
-    {
-        context.Response.Headers["X-Elapsed-ms"] = sw.ElapsedMilliseconds.ToString();
-        return Task.CompletedTask;
-    });
-    await next();
-});
+    // WRONG order: authz before authn → [Authorize] endpoints return 401 even with valid token.
+    app.UseAuthorization();
+    app.UseAuthentication();
+}
+else
+{
+    // Correct order: authn before authz.
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
 
 // IMiddleware factory style: shows per-request scoped DI activation.
 app.UseMiddleware<FactoryMiddleware>();
@@ -127,6 +120,34 @@ app.Map("/branch", branch =>
 app.Run();
 
 public partial class Program;
+
+public static class RequestTimingMiddlewareExtensions
+{
+    public static IApplicationBuilder UseRequestTiming(this IApplicationBuilder app) =>
+        app.UseMiddleware<RequestTimingMiddleware>();
+}
+
+/// <summary>Conventional middleware: a singleton-like instance with per-request InvokeAsync execution.</summary>
+public sealed class RequestTimingMiddleware(RequestDelegate next, ILogger<RequestTimingMiddleware> logger)
+{
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        context.Response.OnStarting(() =>
+        {
+            context.Response.Headers["X-Elapsed-ms"] =
+                stopwatch.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture);
+            return Task.CompletedTask;
+        });
+
+        await next(context);
+        logger.LogDebug(
+            "Request {Method} {Path} completed in {ElapsedMilliseconds} ms",
+            context.Request.Method,
+            context.Request.Path,
+            stopwatch.ElapsedMilliseconds);
+    }
+}
 
 /// <summary>Scoped service resolved per-request via IMiddleware factory style.</summary>
 public sealed class RequestContext

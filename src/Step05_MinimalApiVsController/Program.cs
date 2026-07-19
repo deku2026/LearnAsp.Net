@@ -8,10 +8,20 @@ using Campus.Contracts;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Step05_MinimalApiVsController;
+using Step05_MinimalApiVsController.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<CampusStore>();
-builder.Services.AddControllers();
+builder.Services.AddSingleton<BlockedCourseCodeFilter>();
+builder.Services.AddScoped<ControllerTimingFilter>();
+builder.Services.AddScoped<ControllerResourceFilter>();
+builder.Services.AddScoped<ControllerExceptionFilter>();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<ControllerResourceFilter>();
+    options.Filters.Add<ControllerTimingFilter>();
+    options.Filters.Add<ControllerExceptionFilter>();
+});
 
 var app = builder.Build();
 
@@ -54,7 +64,10 @@ public static class CampusApiExtensions
                 : Results.Ok(course);
         });
 
-        api.MapPost("/courses", Results<Created<CourseDto>, BadRequest<ProblemDetails>> ([FromBody] CreateCourseRequest request, CampusStore store) =>
+        api.MapPost("/courses", Results<Created<CourseDto>, BadRequest<ProblemDetails>> (
+            [FromBody] CreateCourseRequest request,
+            CampusStore store,
+            HttpContext httpContext) =>
         {
             if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Title) || request.Credits < 1)
             {
@@ -66,18 +79,58 @@ public static class CampusApiExtensions
                 });
             }
 
+            GetFilterTrace(httpContext).Add("handler");
             var created = store.AddCourse(request);
             return TypedResults.Created($"/api/v1/courses/{created.Id}", created);
-        }).AddEndpointFilter(async (ctx, next) =>
+        })
+        .AddEndpointFilter(async (ctx, next) =>
         {
-            if (ctx.Arguments.OfType<CreateCourseRequest>().FirstOrDefault() is { Code: var code } &&
-                string.Equals(code, "BLOCKED", StringComparison.OrdinalIgnoreCase))
+            var trace = GetFilterTrace(ctx.HttpContext);
+            trace.Add("first-in");
+            var result = await next(ctx);
+            trace.Add("first-out");
+            ctx.HttpContext.Response.Headers["X-Filter-Order"] = string.Join(',', trace);
+            return result;
+        })
+        .AddEndpointFilter(async (ctx, next) =>
+        {
+            var trace = GetFilterTrace(ctx.HttpContext);
+            trace.Add("second-in");
+            var result = await next(ctx);
+            trace.Add("second-out");
+            return result;
+        })
+        .AddEndpointFilter<BlockedCourseCodeFilter>();
+
+        api.MapPut("/courses/{id:guid}", Results<Ok<CourseDto>, NotFound, BadRequest<ProblemDetails>> (
+            Guid id,
+            [FromBody] CreateCourseRequest request,
+            CampusStore store) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Title) || request.Credits < 1)
             {
-                return Results.Json(new { errorCode = ErrorCodes.ValidationFailed, detail = "blocked by filter" }, statusCode: 400);
+                return TypedResults.BadRequest(new ProblemDetails
+                {
+                    Title = "Validation failed",
+                    Status = StatusCodes.Status400BadRequest,
+                    Extensions = { ["errorCode"] = ErrorCodes.ValidationFailed },
+                });
             }
 
-            return await next(ctx);
+            var updated = store.UpdateCourse(id, request);
+            return updated is null ? TypedResults.NotFound() : TypedResults.Ok(updated);
         });
+
+        api.MapDelete("/courses/{id:guid}", Results<NoContent, NotFound> (Guid id, CampusStore store) =>
+            store.DeleteCourse(id) ? TypedResults.NoContent() : TypedResults.NotFound());
+
+        // Explicit binding sources alongside service injection.
+        api.MapGet("/binding/{id:guid}", (
+            [FromRoute] Guid id,
+            [FromQuery] string? q,
+            [FromHeader(Name = "X-College-Id")] string? collegeId,
+            CampusStore store) =>
+            Results.Ok(new { id, q, collegeId, totalCourses = store.ListCourses().Count }));
 
         api.MapGet("/sections", (CampusStore store) => Results.Ok(store.ListSections()));
         api.MapPost("/sections", ([FromBody] CreateSectionRequest request, CampusStore store) =>
@@ -132,6 +185,19 @@ public static class CampusApiExtensions
         return app;
     }
 
+    private static List<string> GetFilterTrace(HttpContext context)
+    {
+        const string key = "Step05.FilterTrace";
+        if (context.Items.TryGetValue(key, out var value) && value is List<string> trace)
+        {
+            return trace;
+        }
+
+        trace = [];
+        context.Items[key] = trace;
+        return trace;
+    }
+
     private static async IAsyncEnumerable<EnrollmentDto> WatchEnrollments(
         CampusStore store,
         [EnumeratorCancellation] CancellationToken ct)
@@ -145,6 +211,26 @@ public static class CampusApiExtensions
 
             await Task.Delay(50, ct);
         }
+    }
+}
+
+/// <summary>Interface-style endpoint filter with short-circuit validation and DI activation.</summary>
+public sealed class BlockedCourseCodeFilter : IEndpointFilter
+{
+    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        if (context.Arguments.OfType<CreateCourseRequest>().FirstOrDefault() is { Code: var code } &&
+            string.Equals(code, "BLOCKED", StringComparison.OrdinalIgnoreCase))
+        {
+            return ValueTask.FromResult<object?>(TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = "Course code is blocked",
+                Status = StatusCodes.Status400BadRequest,
+                Extensions = { ["errorCode"] = ErrorCodes.ValidationFailed },
+            }));
+        }
+
+        return next(context);
     }
 }
 

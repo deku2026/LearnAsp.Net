@@ -2,6 +2,7 @@ using Campus.Contracts;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Npgsql;
 using Serilog;
 using Step08_LoggingErrorsHealth;
 
@@ -39,21 +40,9 @@ try
         };
     });
 
-    // Real DB readiness check: tries to open a Npgsql connection (configurable).
-    // Falls back to the gate if no connection string is configured (dev-only).
-    var pgCs = builder.Configuration.GetConnectionString("Postgres");
-    if (!string.IsNullOrWhiteSpace(pgCs))
-    {
-        builder.Services.AddHealthChecks()
-            .AddCheck("self", () => HealthCheckResult.Healthy("process up"), tags: ["live"])
-            .AddNpgSql(pgCs, healthQuery: "SELECT 1", name: "postgres-ready", tags: ["ready"]);
-    }
-    else
-    {
-        builder.Services.AddHealthChecks()
-            .AddCheck("self", () => HealthCheckResult.Healthy("process up"), tags: ["live"])
-            .AddCheck<CampusReadinessHealthCheck>("campus-ready", tags: ["ready"]);
-    }
+    builder.Services.AddHealthChecks()
+        .AddCheck("self", () => HealthCheckResult.Healthy("process up"), tags: ["live"])
+        .AddCheck<CampusReadinessHealthCheck>("campus-ready", tags: ["ready"]);
 
     var app = builder.Build();
 
@@ -63,7 +52,11 @@ try
     app.UseStatusCodePages();
 
     app.MapGet("/", () => Results.Ok(new { lab = "Step08_LoggingErrorsHealth" }));
-    app.MapGet("/boom", (HttpContext _) => throw new InvalidOperationException("lab-boom"));
+    app.MapGet("/boom", (ILogger<Program> logger) =>
+    {
+        LoggerMessages.LogBoom(logger);
+        throw new InvalidOperationException("lab-boom");
+    });
     app.MapPost("/ready-state", (ReadyStateBody body, ICampusReadyGate gate) =>
     {
         gate.IsReady = body.Ready;
@@ -73,10 +66,12 @@ try
     app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
     {
         Predicate = r => r.Tags.Contains("live"),
+        ResponseWriter = HealthResponseWriter.WriteAsync,
     });
     app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
     {
         Predicate = r => r.Tags.Contains("ready"),
+        ResponseWriter = HealthResponseWriter.WriteAsync,
     });
 
     app.Run();
@@ -104,16 +99,43 @@ namespace Step08_LoggingErrorsHealth
 
     public sealed class CampusReadyGate : ICampusReadyGate
     {
-        public bool IsReady { get; set; } = true;
+        private int _isReady = 1;
+
+        public bool IsReady
+        {
+            get => Volatile.Read(ref _isReady) == 1;
+            set => Volatile.Write(ref _isReady, value ? 1 : 0);
+        }
     }
 
-    public sealed class CampusReadinessHealthCheck(ICampusReadyGate gate) : IHealthCheck
+    public sealed class CampusReadinessHealthCheck(
+        ICampusReadyGate gate,
+        IConfiguration configuration) : IHealthCheck
     {
-        public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+        public async Task<HealthCheckResult> CheckHealthAsync(
+            HealthCheckContext context,
+            CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(gate.IsReady
-                ? HealthCheckResult.Healthy("ready")
-                : HealthCheckResult.Unhealthy("dependencies not ready"));
+            var connectionString = configuration.GetConnectionString("Postgres");
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                return gate.IsReady
+                    ? HealthCheckResult.Healthy("ready (in-memory lab gate)")
+                    : HealthCheckResult.Unhealthy("dependencies not ready");
+            }
+
+            try
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(cancellationToken);
+                await using var command = new NpgsqlCommand("SELECT 1", connection);
+                _ = await command.ExecuteScalarAsync(cancellationToken);
+                return HealthCheckResult.Healthy("postgres ready");
+            }
+            catch (Exception exception) when (exception is NpgsqlException or TimeoutException)
+            {
+                return HealthCheckResult.Unhealthy("postgres unavailable", exception);
+            }
         }
     }
 
@@ -123,8 +145,11 @@ namespace Step08_LoggingErrorsHealth
 
         public async Task InvokeAsync(HttpContext context)
         {
-            var correlationId = context.Request.Headers.TryGetValue(HeaderName, out var existing) && !string.IsNullOrWhiteSpace(existing)
+            var supplied = context.Request.Headers.TryGetValue(HeaderName, out var existing)
                 ? existing.ToString()
+                : null;
+            var correlationId = IsValidCorrelationId(supplied)
+                ? supplied!
                 : Guid.NewGuid().ToString("N");
 
             context.Response.Headers[HeaderName] = correlationId;
@@ -133,14 +158,40 @@ namespace Step08_LoggingErrorsHealth
                 await next(context);
             }
         }
+
+        private static bool IsValidCorrelationId(string? value) =>
+            value is { Length: >= 1 and <= 64 } &&
+            value.All(character =>
+                char.IsAsciiLetterOrDigit(character) ||
+                character is '-' or '_' or '.');
     }
 
-    public sealed class CampusExceptionHandler(IProblemDetailsService problemDetails, IHostEnvironment env) : IExceptionHandler
+    public sealed class CampusExceptionHandler(
+        IProblemDetailsService problemDetails,
+        IHostEnvironment env,
+        ILogger<CampusExceptionHandler> logger) : IExceptionHandler
     {
         public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
         {
-            httpContext.Items["errorCode"] = ErrorCodes.InternalError;
-            httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            var (status, errorCode, title) = exception switch
+            {
+                KeyNotFoundException => (
+                    StatusCodes.Status404NotFound,
+                    ErrorCodes.NotFound,
+                    "Resource not found"),
+                ArgumentException => (
+                    StatusCodes.Status400BadRequest,
+                    ErrorCodes.ValidationFailed,
+                    "Invalid request"),
+                _ => (
+                    StatusCodes.Status500InternalServerError,
+                    ErrorCodes.InternalError,
+                    "An error occurred"),
+            };
+
+            LoggerMessages.LogUnhandled(logger, httpContext.Request.Path, exception);
+            httpContext.Items["errorCode"] = errorCode;
+            httpContext.Response.StatusCode = status;
 
             await problemDetails.WriteAsync(new ProblemDetailsContext
             {
@@ -148,10 +199,10 @@ namespace Step08_LoggingErrorsHealth
                 Exception = exception,
                 ProblemDetails = new ProblemDetails
                 {
-                    Status = StatusCodes.Status500InternalServerError,
-                    Title = "An error occurred",
-                    Detail = env.IsDevelopment() ? exception.Message : "Unexpected error",
-                    Type = "https://httpstatuses.com/500",
+                    Status = status,
+                    Title = title,
+                    Detail = env.IsDevelopment() ? exception.Message : null,
+                    Type = $"https://httpstatuses.com/{status}",
                 },
             });
 
@@ -163,9 +214,34 @@ namespace Step08_LoggingErrorsHealth
     public static partial class LoggerMessages
     {
         [LoggerMessage(EventId = 1001, Level = LogLevel.Error, Message = "Unhandled exception at {Path}")]
-        public static partial void LogUnhandled(Microsoft.Extensions.Logging.ILogger logger, string path);
+        public static partial void LogUnhandled(
+            Microsoft.Extensions.Logging.ILogger logger,
+            string path,
+            Exception exception);
 
         [LoggerMessage(EventId = 1002, Level = LogLevel.Information, Message = "Boom endpoint hit")]
         public static partial void LogBoom(Microsoft.Extensions.Logging.ILogger logger);
+    }
+
+    public static class HealthResponseWriter
+    {
+        public static Task WriteAsync(HttpContext context, HealthReport report)
+        {
+            context.Response.ContentType = "application/json";
+            return context.Response.WriteAsJsonAsync(new
+            {
+                status = report.Status.ToString(),
+                durationMs = report.TotalDuration.TotalMilliseconds,
+                checks = report.Entries
+                    .OrderBy(entry => entry.Key)
+                    .Select(entry => new
+                    {
+                        name = entry.Key,
+                        status = entry.Value.Status.ToString(),
+                        description = entry.Value.Description,
+                        durationMs = entry.Value.Duration.TotalMilliseconds,
+                    }),
+            });
+        }
     }
 }
