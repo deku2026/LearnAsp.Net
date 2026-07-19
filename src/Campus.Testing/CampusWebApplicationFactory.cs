@@ -27,6 +27,11 @@ public class CampusWebApplicationFactory<TEntry> : WebApplicationFactory<TEntry>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(Environments.Development);
+        foreach (var setting in _config)
+        {
+            builder.UseSetting(setting.Key, setting.Value);
+        }
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(_config);

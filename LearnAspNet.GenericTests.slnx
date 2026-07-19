@@ -13,5 +13,7 @@
     <Project Path="tests/Part03_2_AppArchitecture.Tests/Part03_2_AppArchitecture.Tests.csproj" />
     <Project Path="tests/Part03_3_ProjectStructure.Tests/Part03_3_ProjectStructure.Tests.csproj" />
     <Project Path="tests/Part03_4_ArchTesting.Tests/Part03_4_ArchTesting.Tests.csproj" />
+    <Project Path="tests/Part05_1_AuthnAuthz.Tests/Part05_1_AuthnAuthz.Tests.csproj" />
+    <Project Path="tests/Part05_2_SpaAuth.Tests/Part05_2_SpaAuth.Tests.csproj" />
   </Folder>
 </Solution>

@@ -73,9 +73,9 @@ jobs:
       - name: Build (Release)
         run: dotnet build LearnAspNet.slnx -c Release --no-restore
 
-      # GitHub-hosted Ubuntu already has Docker Engine. Step09 Testcontainers uses it
-      # to pull/run postgres — no local docker-compose stack install required here.
-      # Future "full infra" docker tests should also live only in this Linux job.
+      # GitHub-hosted Ubuntu already has Docker Engine. Docker-backed PostgreSQL,
+      # Redis and Keycloak suites live only in this Linux job. The W6 fixture reuses
+      # the Redis service above and starts an isolated Keycloak container.
       - name: Verify Docker (for Testcontainers)
         run: |
           docker version

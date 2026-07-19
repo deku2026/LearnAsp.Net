@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campus W6 · Secure BFF</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">LEARN ASP.NET · W6</p>
+    <h1>浏览器里没有 token 的 SPA</h1>
+    <p class="lede">
+      Keycloak 负责身份，BFF 在 Redis 中保存 access/refresh token；
+      浏览器只持有 HttpOnly 会话引用。
+    </p>
+    <section class="panel">
+      <div>
+        <span class="label">会话</span>
+        <strong id="session">正在检查…</strong>
+      </div>
+      <div class="actions">
+        <a id="login" class="button" href="/bff/login?returnUrl=/">使用 Keycloak 登录</a>
+        <button id="logout" class="button secondary" hidden>安全退出</button>
+      </div>
+    </section>
+    <section id="workspace" class="panel" hidden>
+      <form id="course-form">
+        <label>课程代码 <input id="code" maxlength="32" required value="SEC-101"></label>
+        <label>课程名称 <input id="title" maxlength="200" required value="Secure Web Architecture"></label>
+        <button class="button" type="submit">通过 BFF 创建</button>
+      </form>
+      <p id="message" role="status"></p>
+      <ul id="courses"></ul>
+    </section>
+    <aside>
+      <strong>浏览器安全边界</strong>
+      <code>SameSite=Lax · HttpOnly · Secure (production) · X-CSRF: 1 · same-origin only</code>
+    </aside>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
