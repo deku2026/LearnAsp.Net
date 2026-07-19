@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Testcontainers" />
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Part05_1_AuthnAuthz\Part05_1_AuthnAuthz.csproj"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\Part05_2_SpaAuth\Part05_2_SpaAuth.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

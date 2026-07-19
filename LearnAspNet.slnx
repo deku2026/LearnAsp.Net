@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Campus.Contracts/Campus.Contracts.csproj" />
+    <Project Path="src/Campus.Security/Campus.Security.csproj" />
     <Project Path="src/Campus.Testing/Campus.Testing.csproj" />
     <Project Path="src/Step01_HostStartup/Step01_HostStartup.csproj" />
     <Project Path="src/Step02_DIConfigOptions/Step02_DIConfigOptions.csproj" />
@@ -63,5 +64,8 @@
     <Project Path="tests/Part04_1_EFCore.Tests/Part04_1_EFCore.Tests.csproj" />
     <Project Path="tests/Part04_2_Caching.Tests/Part04_2_Caching.Tests.csproj" />
     <Project Path="tests/Part04_3_MultiTenant.Tests/Part04_3_MultiTenant.Tests.csproj" />
+    <Project Path="tests/Part05_1_AuthnAuthz.Tests/Part05_1_AuthnAuthz.Tests.csproj" />
+    <Project Path="tests/Part05_2_SpaAuth.Tests/Part05_2_SpaAuth.Tests.csproj" />
+    <Project Path="tests/Part05_Security.IntegrationTests/Part05_Security.IntegrationTests.csproj" />
   </Folder>
 </Solution>

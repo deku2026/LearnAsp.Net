@@ -6,6 +6,14 @@
 
 阶段 14（Unity 接轨附录）不涉及；本仓不重写路线图，文档保留在 ArcForges 原位。
 
+## 已实现阶段
+
+- W1–W2：Step01–08
+- W3：Step09–10
+- W4：Part03_1–4
+- W5：Part04_1–3
+- W6：Part05_1–2，详见 [Keycloak + SPA/BFF 安全实战](docs/w6-part05-security-lab.md)
+
 ## 工作原理
 
 整仓一个 SLNX 解决方案 + **31 个独立 `Microsoft.NET.Sdk.Web` exe**。每个占位项目长这样：

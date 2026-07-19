@@ -64,7 +64,7 @@ jobs:
         run: dotnet build LearnAspNet.slnx -c Release --no-restore
 
       - name: Test generic projects (Release)
-        # Docker-backed PostgreSQL/Redis suites run only in Linux CI.
+        # Docker-backed PostgreSQL/Redis/Keycloak suites run only in Linux CI.
         run: dotnet test LearnAspNet.GenericTests.slnx -c Release --no-build --filter-not-trait Category=Docker
 
       - name: Run pre-commit hooks

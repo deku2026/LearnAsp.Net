@@ -33,6 +33,9 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
         var collegeId = Request.Headers.TryGetValue("X-Test-College", out var collegeHeader)
             ? collegeHeader.ToString()
             : "college-1";
+        var scopes = Request.Headers.TryGetValue("X-Test-Scope", out var scopeHeader)
+            ? scopeHeader.ToString()
+            : "campus.read campus.write";
 
         var claims = new List<Claim>
         {
@@ -41,6 +44,7 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
             new(ClaimTypes.Role, role),
             new("role", role),
             new("college_id", collegeId),
+            new("scope", scopes),
         };
 
         var identity = new ClaimsIdentity(claims, SchemeName);
