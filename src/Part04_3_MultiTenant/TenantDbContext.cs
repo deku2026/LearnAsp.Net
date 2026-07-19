@@ -17,7 +17,17 @@ public interface ITenantSetter
 public sealed class TenantContext : ITenantContext, ITenantSetter
 {
     public string? CurrentCollegeId { get; private set; }
-    public void SetTenant(string collegeId) => CurrentCollegeId = collegeId;
+
+    public void SetTenant(string collegeId)
+    {
+        if (CurrentCollegeId is not null &&
+            !string.Equals(CurrentCollegeId, collegeId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Tenant context is immutable for the lifetime of a request.");
+        }
+
+        CurrentCollegeId = collegeId;
+    }
 }
 
 // Entities implementing ITenantEntity
@@ -92,23 +102,46 @@ public sealed class TenantDbContext(
                     // Force stamp with current tenant (even if caller forgot to set it)
                     entry.Entity.CollegeId = currentTenant;
                     break;
-                case EntityState.Modified when entry.Entity.CollegeId != currentTenant:
+                case EntityState.Modified:
+                case EntityState.Deleted:
+                    var originalTenant = entry.Property(nameof(ITenantEntity.CollegeId)).OriginalValue as string;
+                    if (entry.Entity.CollegeId == currentTenant &&
+                        string.Equals(originalTenant, currentTenant, StringComparison.Ordinal))
+                    {
+                        break;
+                    }
+
                     throw new InvalidOperationException(
-                        $"禁止跨租户写入: entity belongs to {entry.Entity.CollegeId}, current tenant is {currentTenant}");
+                        $"禁止跨租户写入: entity belongs to {originalTenant ?? entry.Entity.CollegeId}, current tenant is {currentTenant}");
             }
         }
     }
 }
 
 // Tenant resolution middleware
-public sealed class TenantResolutionMiddleware(RequestDelegate next)
+public sealed class TenantResolutionMiddleware(RequestDelegate next, IConfiguration configuration)
 {
+    private readonly HashSet<string> _allowedTenants = configuration
+        .GetSection("Tenants:Allowed")
+        .Get<string[]>()?
+        .ToHashSet(StringComparer.Ordinal)
+        ?? new HashSet<string>(["college-1"], StringComparer.Ordinal);
+
     public async Task InvokeAsync(HttpContext context, ITenantSetter setter)
     {
         // Priority: JWT claim → X-Tenant-Id header → default
         var tenantId = context.User.FindFirst("college_id")?.Value
                        ?? context.Request.Headers["X-Tenant-Id"].FirstOrDefault()
                        ?? "college-1";
+
+        if (tenantId.Length is < 1 or > 64 ||
+            tenantId.Any(ch => !(char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_')) ||
+            !_allowedTenants.Contains(tenantId))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await context.Response.WriteAsJsonAsync(new { errorCode = "tenant.not_found" });
+            return;
+        }
 
         setter.SetTenant(tenantId);
         await next(context);
@@ -117,3 +150,10 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next)
 
 public sealed record CourseDto(Guid Id, string Code, string Title, int Credits, string CollegeId);
 public sealed record CreateCourseBody(string Code, string Title, int Credits);
+
+public static class TenantCacheKey
+{
+    public static string Course(string tenantId, Guid courseId) => $"tenant:{tenantId}:course:{courseId:N}";
+
+    public static string CoursesTag(string tenantId) => $"tenant:{tenantId}:courses";
+}

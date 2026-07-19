@@ -22,6 +22,16 @@ jobs:
     name: Linux x64
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    services:
+      redis:
+        image: redis:8.8.0-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -72,16 +82,7 @@ jobs:
           docker info >/dev/null
 
       - name: Test (Release)
-        run: dotnet test LearnAspNet.slnx -c Release --no-build --logger "trx;LogFilePrefix=linux"
+        run: dotnet test LearnAspNet.slnx -c Release --no-build
 
       - name: Run pre-commit hooks
-        run: |
-          set +e
-          pre-commit run --all-files --show-diff-on-failure --color=always
-          status=$?
-          set -e
-          if [[ ${status} -eq 0 ]]; then
-            exit 0
-          fi
-          echo 'pre-commit made changes; rerunning once'
-          pre-commit run --all-files --show-diff-on-failure --color=always
+        run: pre-commit run --all-files --show-diff-on-failure --color=always

@@ -4,6 +4,7 @@
 // Title : 多租户 · 行级隔离 · query filter · 写保护
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 using Part04_3_MultiTenant;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +16,7 @@ var cs = builder.Configuration.GetConnectionString("Campus")
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 builder.Services.AddScoped<ITenantSetter>(sp => sp.GetRequiredService<TenantContext>());
+builder.Services.AddHybridCache();
 
 builder.Services.AddDbContext<TenantDbContext>((sp, o) =>
 {
@@ -24,9 +26,9 @@ builder.Services.AddDbContext<TenantDbContext>((sp, o) =>
 
 var app = builder.Build();
 
-// Auto-migrate
-using (var scope = app.Services.CreateScope())
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue("Database:ApplyMigrations", false))
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<TenantDbContext>();
     await db.Database.MigrateAsync();
 }
@@ -69,12 +71,28 @@ api.MapPost("/courses", async (CreateCourseBody body, TenantDbContext db) =>
 });
 
 // Get course by id — query filter ensures tenant isolation (returns 404 if wrong tenant)
-api.MapGet("/courses/{id:guid}", async (Guid id, TenantDbContext db) =>
+api.MapGet("/courses/{id:guid}", async (
+    Guid id,
+    ITenantContext tenant,
+    TenantDbContext db,
+    HybridCache cache,
+    CancellationToken ct) =>
 {
-    var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id);
+    var tenantId = tenant.CurrentCollegeId ?? throw new InvalidOperationException("No tenant context set.");
+    var course = await cache.GetOrCreateAsync(
+        TenantCacheKey.Course(tenantId, id),
+        async token =>
+        {
+            var row = await db.Courses.FirstOrDefaultAsync(c => c.Id == id, token);
+            return row is null
+                ? null
+                : new CourseDto(row.Id, row.Code, row.Title, row.Credits, row.CollegeId);
+        },
+        tags: [TenantCacheKey.CoursesTag(tenantId)],
+        cancellationToken: ct);
     return course is null
         ? Results.NotFound(new { errorCode = "resource.not_found" })
-        : Results.Ok(new CourseDto(course.Id, course.Code, course.Title, course.Credits, course.CollegeId));
+        : Results.Ok(course);
 });
 
 // Admin: view including deleted — IgnoreQueryFilters(["SoftDelete"]) keeps tenant isolation
@@ -88,12 +106,20 @@ api.MapGet("/courses/all-including-deleted", async (TenantDbContext db) =>
 });
 
 // Soft-delete a course (for testing the filter)
-api.MapDelete("/courses/{id:guid}", async (Guid id, TenantDbContext db) =>
+api.MapDelete("/courses/{id:guid}", async (
+    Guid id,
+    ITenantContext tenant,
+    TenantDbContext db,
+    HybridCache cache,
+    CancellationToken ct) =>
 {
-    var course = await db.Courses.AsTracking().FirstOrDefaultAsync(c => c.Id == id);
+    var tenantId = tenant.CurrentCollegeId ?? throw new InvalidOperationException("No tenant context set.");
+    var course = await db.Courses.AsTracking().FirstOrDefaultAsync(c => c.Id == id, ct);
     if (course is null) return Results.NotFound();
     course.IsDeleted = true;
-    await db.SaveChangesAsync();
+    await db.SaveChangesAsync(ct);
+    await cache.RemoveAsync(TenantCacheKey.Course(tenantId, id), ct);
+    await cache.RemoveByTagAsync(TenantCacheKey.CoursesTag(tenantId), ct);
     return Results.Ok(new { softDeleted = true });
 });
 

@@ -4,7 +4,6 @@ using Campus.Contracts;
 using Campus.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 
 namespace Step03_MiddlewarePipeline.Tests;
 
@@ -89,6 +88,7 @@ public sealed class MiddlewareTests
         var client = factory.CreateClient();
         var response = await client.GetAsync("/favicon.ico");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(response.Headers.Contains("X-Elapsed-ms"));
     }
 
     [Fact]

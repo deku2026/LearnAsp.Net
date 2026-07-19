@@ -4,8 +4,6 @@
 // Title : 路由与终结点
 
 using Campus.Contracts;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Routing;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<InMemoryCourseCatalog>();
@@ -82,11 +80,14 @@ public sealed class InMemoryCourseCatalog
         _courses.Values.FirstOrDefault(c => string.Equals(c.Code, code, StringComparison.OrdinalIgnoreCase));
 }
 
-/// <summary>Custom IRouteConstraint: matches term codes like 2026S1, 2026F, 2027S2 (YYYY + S/F + digit).</summary>
+/// <summary>Custom IRouteConstraint: matches term codes like 2026S1, 2026S2, or 2026F.</summary>
 public sealed class TermCodeConstraint : IRouteConstraint
 {
     private static readonly System.Text.RegularExpressions.Regex Pattern =
-        new(@"^\d{4}[SFsf]\d$", System.Text.RegularExpressions.RegexOptions.Compiled);
+        new(
+            @"^\d{4}(?:S[12]|F)$",
+            System.Text.RegularExpressions.RegexOptions.Compiled |
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     public bool Match(
         HttpContext? httpContext,

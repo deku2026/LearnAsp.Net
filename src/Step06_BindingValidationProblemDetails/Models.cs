@@ -33,21 +33,24 @@ public sealed class CreateSectionBody : IValidatableObject
     // IValidatableObject: cross-field validation (can access DI via ValidationContext.GetService)
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (Term.StartsWith("INTENSIVE", StringComparison.OrdinalIgnoreCase) && Capacity % 2 != 0)
+        if (Term.EndsWith("S2", StringComparison.OrdinalIgnoreCase) && Capacity % 2 != 0)
         {
             yield return new ValidationResult(
-                "INTENSIVE terms require even Capacity.",
+                "Summer term sections require an even Capacity.",
                 [nameof(Term), nameof(Capacity)]);
         }
     }
 }
 
-/// <summary>Custom ValidationAttribute: term must match YYYY + S/F + digit (e.g. 2026S1).</summary>
+/// <summary>Custom ValidationAttribute: term must match YYYYS1, YYYYS2, or YYYYF.</summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false)]
 public sealed class ValidTermCodeAttribute : ValidationAttribute
 {
     private static readonly System.Text.RegularExpressions.Regex Pattern =
-        new(@"^\d{4}[SFsf]\d$", System.Text.RegularExpressions.RegexOptions.Compiled);
+        new(
+            @"^\d{4}(?:S[12]|F)$",
+            System.Text.RegularExpressions.RegexOptions.Compiled |
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     protected override ValidationResult? IsValid(object? value, ValidationContext context)
     {
@@ -57,7 +60,7 @@ public sealed class ValidTermCodeAttribute : ValidationAttribute
         }
 
         return new ValidationResult(
-            $"{context.DisplayName} must match format YYYY + S/F + digit (e.g. 2026S1).",
+            $"{context.DisplayName} must be a term such as 2026S1, 2026S2, or 2026F.",
             [context.MemberName ?? "Term"]);
     }
 }
@@ -65,13 +68,14 @@ public sealed class ValidTermCodeAttribute : ValidationAttribute
 /// <summary>Cross-field FluentValidation (kept for comparison with IValidatableObject).</summary>
 public sealed class CreateSectionBodyValidator : AbstractValidator<CreateSectionBody>
 {
-    public CreateSectionBodyValidator()
+    public CreateSectionBodyValidator(CourseBook courseBook)
     {
         RuleFor(x => x.Term).NotEmpty().MaximumLength(32);
         RuleFor(x => x.Capacity).GreaterThan(0);
         RuleFor(x => x)
-            .Must(x => !x.Term.StartsWith("INTENSIVE", StringComparison.OrdinalIgnoreCase) || x.Capacity % 2 == 0)
-            .WithMessage("INTENSIVE terms require even Capacity.")
-            .WithErrorCode("section.intensive_even_capacity");
+            .MustAsync((body, cancellationToken) =>
+                courseBook.IsSectionUniqueAsync(body.CourseId, body.Term, cancellationToken))
+            .WithMessage("A section already exists for this course and term.")
+            .WithErrorCode("section.duplicate");
     }
 }

@@ -30,10 +30,20 @@ app.MapGet("/api/v1/courses", async (ICourseRepository repo) =>
 
 app.MapPost("/api/v1/courses", async (CreateCourseRequest dto, ICreateCourseHandler handler) =>
 {
-    var course = await handler.HandleAsync(dto.Code, dto.Title, dto.Credits);
-    return Results.Created(
-        $"/api/v1/courses/{course.Id}",
-        new CourseResponse(course.Id, course.Code, course.Title, course.Credits));
+    try
+    {
+        var course = await handler.HandleAsync(dto.Code, dto.Title, dto.Credits);
+        return Results.Created(
+            $"/api/v1/courses/{course.Id}",
+            new CourseResponse(course.Id, course.Code, course.Title, course.Credits));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [ex.ParamName ?? "course"] = [ex.Message],
+        });
+    }
 });
 
 app.Run();

@@ -4,14 +4,16 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Campus.Contracts;
 using Campus.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace Step07_AuthnAuthzEntry.Tests;
 
-public sealed class AuthTests : IClassFixture<CampusWebApplicationFactory<Program>>
+public sealed class AuthTests : IClassFixture<TestAuthWebApplicationFactory<Program>>
 {
-    private readonly CampusWebApplicationFactory<Program> _factory;
+    private readonly TestAuthWebApplicationFactory<Program> _factory;
 
-    public AuthTests(CampusWebApplicationFactory<Program> factory)
+    public AuthTests(TestAuthWebApplicationFactory<Program> factory)
     {
         _factory = factory;
     }
@@ -27,9 +29,9 @@ public sealed class AuthTests : IClassFixture<CampusWebApplicationFactory<Progra
     [Fact]
     public async Task Fallback_policy_requires_auth_for_unprotected_endpoint()
     {
-        // /api/v1/enrollments has no .RequireAuthorization() but fallback policy secures it.
+        // No RequireAuthorization call: the fallback policy still secures this endpoint.
         var client = _factory.CreateClient();
-        var response = await client.GetAsync("/api/v1/enrollments");
+        var response = await client.GetAsync("/api/v1/default-protected");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -71,9 +73,20 @@ public sealed class AuthTests : IClassFixture<CampusWebApplicationFactory<Progra
     }
 
     [Fact]
+    public async Task Student_cannot_enroll_another_student()
+    {
+        var client = _factory.CreateClient().AsTestUser(userId: "stu-owner", role: "Student");
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/enrollments",
+            new CreateEnrollmentRequest(Guid.NewGuid(), Guid.NewGuid()));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Jwt_token_endpoint_works()
     {
-        var client = _factory.CreateClient();
+        await using var jwtFactory = new CampusWebApplicationFactory<Program>();
+        var client = jwtFactory.CreateClient();
         var tokenResponse = await client.PostAsJsonAsync("/token/dev", new { sub = "jwt-user", role = "Admin", collegeId = "c1" });
         tokenResponse.EnsureSuccessStatusCode();
         var payload = await tokenResponse.Content.ReadFromJsonAsync<JsonElement>();
@@ -83,5 +96,34 @@ public sealed class AuthTests : IClassFixture<CampusWebApplicationFactory<Progra
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         var me = await client.GetAsync("/me");
         Assert.Equal(HttpStatusCode.OK, me.StatusCode);
+    }
+
+    [Fact]
+    public async Task Test_headers_cannot_authenticate_in_the_real_application()
+    {
+        await using var realFactory = new CampusWebApplicationFactory<Program>();
+        var client = realFactory.CreateClient().AsTestUser(role: "Admin");
+        var response = await client.GetAsync("/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Development_token_endpoint_is_not_exposed_in_production()
+    {
+        await using var productionFactory = new CampusWebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Jwt:SigningKey"] = "production-test-signing-key-at-least-32-bytes",
+                    }));
+            });
+        var client = productionFactory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/token/dev",
+            new { sub = "user", role = "Admin", collegeId = "c1" });
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

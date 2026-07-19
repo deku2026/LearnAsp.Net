@@ -14,7 +14,7 @@ public interface ICreateCourseHandler
     Task<Course> HandleAsync(string code, string title, int credits, CancellationToken ct = default);
 }
 
-public sealed class CreateCourseHandler(ICourseRepository repo) : ICreateCourseHandler
+internal sealed class CreateCourseHandler(ICourseRepository repo) : ICreateCourseHandler
 {
     public async Task<Course> HandleAsync(string code, string title, int credits, CancellationToken ct = default)
     {

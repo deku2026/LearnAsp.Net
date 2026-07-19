@@ -14,7 +14,12 @@ builder.Services.AddScoped<TickRecorder>();
 
 var app = builder.Build();
 
-app.MapGet("/", () => Results.Ok(new { lab = "Step01_HostStartup", status = "ok" }));
+app.MapGet("/", (IConfiguration configuration) => Results.Ok(new
+{
+    lab = "Step01_HostStartup",
+    status = "ok",
+    greeting = configuration["Greeting"],
+}));
 
 app.MapGet("/env", (IHostEnvironment env, IConfiguration config) =>
 {

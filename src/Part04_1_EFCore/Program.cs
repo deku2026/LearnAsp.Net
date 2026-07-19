@@ -3,6 +3,9 @@
 // Part  : Part04_1 · EFCore
 // Title : EF Core 核心
 
+using System.Globalization;
+using System.Text;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Part04_1_EFCore;
 
@@ -11,17 +14,19 @@ var builder = WebApplication.CreateBuilder(args);
 var cs = builder.Configuration.GetConnectionString("Campus")
          ?? "Host=localhost;Port=5432;Database=campus;Username=dotnet;Password=dotnet_dev";
 
-builder.Services.AddDbContext<CampusDbContext>(o =>
+builder.Services.AddScoped<QueryCounterInterceptor>();
+builder.Services.AddDbContext<CampusDbContext>((sp, o) =>
 {
     o.UseNpgsql(cs);
     o.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+    o.AddInterceptors(sp.GetRequiredService<QueryCounterInterceptor>());
 });
 
 var app = builder.Build();
 
-// Auto-migrate on startup
-using (var scope = app.Services.CreateScope())
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue("Database:ApplyMigrations", false))
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<CampusDbContext>();
     await db.Database.MigrateAsync();
 }
@@ -31,18 +36,24 @@ app.MapGet("/", () => Results.Ok(new { lab = "Part04_1_EFCore", storage = "Postg
 var api = app.MapGroup("/api/v1");
 
 // --- Keyset pagination ---
-api.MapGet("/sections", async (Guid? lastSeenId, int limit, CampusDbContext db) =>
+api.MapGet("/sections", async (string? after, int? limit, CampusDbContext db) =>
 {
-    var pageSize = Math.Clamp(limit, 1, 100);
+    var pageSize = Math.Clamp(limit ?? 20, 1, 100);
     var query = db.Sections.AsNoTracking().AsQueryable();
-    if (lastSeenId is not null)
+    if (!string.IsNullOrWhiteSpace(after))
     {
-        query = query.Where(s => s.Id > lastSeenId.Value);
+        if (!TryDecodeCursor(after, out var createdAt, out var id))
+        {
+            return Results.BadRequest(new { errorCode = "pagination.cursor_invalid" });
+        }
+
+        query = query.Where(s => s.CreatedAt > createdAt || (s.CreatedAt == createdAt && s.Id > id));
     }
 
-    var page = await query
-        .OrderBy(s => s.Id)
-        .Take(pageSize)
+    var rows = await query
+        .OrderBy(s => s.CreatedAt)
+        .ThenBy(s => s.Id)
+        .Take(pageSize + 1)
         .Select(s => new SectionListItemDto(
             s.Id,
             s.Course!.Code,
@@ -53,44 +64,61 @@ api.MapGet("/sections", async (Guid? lastSeenId, int limit, CampusDbContext db) 
             s.Status,
             s.CreatedAt))
         .ToListAsync();
-    return Results.Ok(new { data = page, nextCursor = page.Count == pageSize ? page[^1].Id.ToString("N") : null });
+    var hasMore = rows.Count > pageSize;
+    var page = rows.Take(pageSize).ToList();
+    var nextCursor = hasMore ? EncodeCursor(page[^1].CreatedAt, page[^1].Id) : null;
+    return Results.Ok(new { data = page, nextCursor, hasMore });
 });
 
-// --- N+1 demo: intentional (no Include) ---
-api.MapGet("/sections/n1-demo", async (CampusDbContext db) =>
+// --- N+1 demo: intentional 1 query for sections + N queries for course titles ---
+api.MapGet("/sections/n1-demo", async (CampusDbContext db, QueryCounterInterceptor counter) =>
 {
-    // N+1: first query loads sections, then accessing Course triggers a separate query per section.
-    // With NoTracking and no Include, Course is null — we must materialize tracking to trigger the N+1.
-    // For the demo, use a separate tracked query to show the N+1 pattern.
-    var sections = await db.Sections.Include(s => s.Course).Take(10).ToListAsync();
-    var result = sections.Select(s => new
+    counter.Reset();
+    var sections = await db.Sections
+        .OrderBy(s => s.Id)
+        .Take(10)
+        .Select(s => new { s.Id, s.SectionName, s.CourseId })
+        .ToListAsync();
+    var result = new List<object>(sections.Count);
+    foreach (var section in sections)
     {
-        s.Id,
-        s.SectionName,
-        CourseName = s.Course?.Title ?? "(null)",
-    }).ToList();
-    return Results.Ok(new { demo = "N+1 intentional (Include loads Course, but pattern shows extra queries)", count = result.Count, items = result });
+        var courseName = await db.Courses
+            .Where(c => c.Id == section.CourseId)
+            .Select(c => c.Title)
+            .SingleAsync();
+        result.Add(new { section.Id, section.SectionName, CourseName = courseName });
+    }
+
+    return Results.Ok(new
+    {
+        demo = "N+1 intentional",
+        count = result.Count,
+        queryCount = counter.Count,
+        items = result,
+    });
 });
 
 // --- N+1 fix: Include ---
-api.MapGet("/sections/n1-fix-include", async (CampusDbContext db) =>
+api.MapGet("/sections/n1-fix-include", async (CampusDbContext db, QueryCounterInterceptor counter) =>
 {
+    counter.Reset();
     var sections = await db.Sections
         .Include(s => s.Course)
         .Take(10)
         .ToListAsync();
     var result = sections.Select(s => new { s.Id, s.SectionName, CourseName = s.Course!.Title }).ToList();
-    return Results.Ok(new { demo = "N+1 fix via Include", count = result.Count, items = result });
+    return Results.Ok(new { demo = "N+1 fix via Include", count = result.Count, queryCount = counter.Count, items = result });
 });
 
 // --- N+1 fix: Projection ---
-api.MapGet("/sections/n1-fix-projection", async (CampusDbContext db) =>
+api.MapGet("/sections/n1-fix-projection", async (CampusDbContext db, QueryCounterInterceptor counter) =>
 {
+    counter.Reset();
     var result = await db.Sections
         .Take(10)
         .Select(s => new { s.Id, s.SectionName, CourseName = s.Course!.Title })
         .ToListAsync();
-    return Results.Ok(new { demo = "N+1 fix via projection", count = result.Count, items = result });
+    return Results.Ok(new { demo = "N+1 fix via projection", count = result.Count, queryCount = counter.Count, items = result });
 });
 
 // --- Cartesian explosion: multi-collection Include ---
@@ -128,11 +156,20 @@ api.MapPut("/courses/{id:guid}", async (Guid id, UpdateCourseBody body, CampusDb
 
     course.Title = body.Title;
     course.Credits = body.Credits;
+    db.Entry(course).Property<uint>("xmin").OriginalValue = body.Version;
 
     try
     {
         await db.SaveChangesAsync();
-        return Results.Ok(new CourseDetailDto(course.Id, course.Code, course.Title, course.Credits, course.CollegeId, course.CreatedAt));
+        var version = db.Entry(course).Property<uint>("xmin").CurrentValue;
+        return Results.Ok(new CourseDetailDto(
+            course.Id,
+            course.Code,
+            course.Title,
+            course.Credits,
+            course.CollegeId,
+            course.CreatedAt,
+            version));
     }
     catch (DbUpdateConcurrencyException)
     {
@@ -183,7 +220,33 @@ api.MapPost("/courses", async (CreateCourseBody body, CampusDbContext db) =>
     };
     db.Courses.Add(course);
     await db.SaveChangesAsync();
-    return Results.Created($"/api/v1/courses/{course.Id}", new CourseDetailDto(course.Id, course.Code, course.Title, course.Credits, course.CollegeId, course.CreatedAt));
+    var version = db.Entry(course).Property<uint>("xmin").CurrentValue;
+    return Results.Created(
+        $"/api/v1/courses/{course.Id}",
+        new CourseDetailDto(
+            course.Id,
+            course.Code,
+            course.Title,
+            course.Credits,
+            course.CollegeId,
+            course.CreatedAt,
+            version));
+});
+
+api.MapGet("/courses/{id:guid}", async (Guid id, CampusDbContext db) =>
+{
+    var course = await db.Courses
+        .Where(c => c.Id == id)
+        .Select(c => new CourseDetailDto(
+            c.Id,
+            c.Code,
+            c.Title,
+            c.Credits,
+            c.CollegeId,
+            c.CreatedAt,
+            EF.Property<uint>(c, "xmin")))
+        .SingleOrDefaultAsync();
+    return course is null ? Results.NotFound() : Results.Ok(course);
 });
 
 // --- Create section (for testing) ---
@@ -207,8 +270,38 @@ api.MapPost("/sections", async (CreateSectionBody body, CampusDbContext db) =>
 
 app.Run();
 
+static string EncodeCursor(DateTimeOffset createdAt, Guid id)
+{
+    var raw = string.Create(CultureInfo.InvariantCulture, $"{createdAt.UtcTicks}:{id:N}");
+    return WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(raw));
+}
+
+static bool TryDecodeCursor(string raw, out DateTimeOffset createdAt, out Guid id)
+{
+    createdAt = default;
+    id = default;
+    try
+    {
+        var decoded = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(raw));
+        var parts = decoded.Split(':', 2);
+        if (parts.Length != 2 ||
+            !long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) ||
+            !Guid.TryParseExact(parts[1], "N", out id))
+        {
+            return false;
+        }
+
+        createdAt = new DateTimeOffset(ticks, TimeSpan.Zero);
+        return true;
+    }
+    catch (FormatException)
+    {
+        return false;
+    }
+}
+
 public partial class Program;
 
 public sealed record CreateCourseBody(string Code, string Title, int Credits, string? CollegeId = null);
-public sealed record UpdateCourseBody(string Title, int Credits);
+public sealed record UpdateCourseBody(string Title, int Credits, uint Version);
 public sealed record CreateSectionBody(Guid CourseId, string SectionName, string Semester, int Capacity, string? CollegeId = null);

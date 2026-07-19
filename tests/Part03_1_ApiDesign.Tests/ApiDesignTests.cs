@@ -20,13 +20,21 @@ public sealed class ApiDesignTests : IClassFixture<CampusWebApplicationFactory<P
     {
         for (var i = 0; i < 3; i++)
         {
-            var r = await _client.PostAsJsonAsync("/api/v1/courses", new { code = $"C{i:00}", title = $"Course {i}", credits = 3 });
+            var r = await _client.PostAsJsonAsync(
+                "/api/v1/courses",
+                new { code = $"KS{i:00}", title = $"KeysetOnly {i}", credits = 3 });
             Assert.Equal(HttpStatusCode.Created, r.StatusCode);
         }
 
-        var page = await _client.GetFromJsonAsync<JsonElement>("/api/v1/courses?limit=2");
+        var page = await _client.GetFromJsonAsync<JsonElement>("/api/v1/courses?q=KeysetOnly&limit=2");
         Assert.True(page.GetProperty("hasMore").GetBoolean());
-        Assert.False(string.IsNullOrWhiteSpace(page.GetProperty("nextCursor").GetString()));
+        var cursor = page.GetProperty("nextCursor").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(cursor));
+
+        var secondPage = await _client.GetFromJsonAsync<JsonElement>(
+            $"/api/v1/courses?q=KeysetOnly&limit=2&after={Uri.EscapeDataString(cursor!)}");
+        Assert.False(secondPage.GetProperty("hasMore").GetBoolean());
+        Assert.Single(secondPage.GetProperty("data").EnumerateArray());
     }
 
     [Fact]
@@ -58,6 +66,14 @@ public sealed class ApiDesignTests : IClassFixture<CampusWebApplicationFactory<P
             var putOk = await _client.SendAsync(put);
             Assert.Equal(HttpStatusCode.OK, putOk.StatusCode);
         }
+
+        using var stalePut = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/courses/{id}")
+        {
+            Content = JsonContent.Create(new { title = "Stale", credits = 3 }),
+        };
+        stalePut.Headers.IfMatch.Add(new EntityTagHeaderValue(etag));
+        var stale = await _client.SendAsync(stalePut);
+        Assert.Equal(HttpStatusCode.PreconditionFailed, stale.StatusCode);
     }
 
     [Fact]
@@ -91,6 +107,38 @@ public sealed class ApiDesignTests : IClassFixture<CampusWebApplicationFactory<P
             var e2 = await r2.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(e1.GetProperty("id").GetGuid(), e2.GetProperty("id").GetGuid());
         }
+    }
+
+    [Fact]
+    public async Task Idempotency_key_rejects_different_body()
+    {
+        var course = await (await _client.PostAsJsonAsync(
+                "/api/v1/courses",
+                new { code = "IDEM2", title = "Idem conflict", credits = 1 }))
+            .Content.ReadFromJsonAsync<JsonElement>();
+        var section = await (await _client.PostAsJsonAsync("/api/v1/sections", new
+        {
+            courseId = course.GetProperty("id").GetGuid(),
+            term = "2026F",
+            capacity = 10,
+        })).Content.ReadFromJsonAsync<JsonElement>();
+        var sectionId = section.GetProperty("id").GetGuid();
+
+        using var first = new HttpRequestMessage(HttpMethod.Post, "/api/v1/enrollments")
+        {
+            Content = JsonContent.Create(new { studentId = Guid.NewGuid(), sectionId }),
+        };
+        first.Headers.Add("Idempotency-Key", "key-conflict");
+        Assert.Equal(HttpStatusCode.Created, (await _client.SendAsync(first)).StatusCode);
+
+        using var second = new HttpRequestMessage(HttpMethod.Post, "/api/v1/enrollments")
+        {
+            Content = JsonContent.Create(new { studentId = Guid.NewGuid(), sectionId }),
+        };
+        second.Headers.Add("Idempotency-Key", "key-conflict");
+        var conflict = await _client.SendAsync(second);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        await ProblemDetailsAssertions.AssertErrorCodeAsync(conflict, "idempotency.conflict");
     }
 
     [Fact]
@@ -132,8 +180,14 @@ public sealed class ApiDesignTests : IClassFixture<CampusWebApplicationFactory<P
         var v2 = await _client.GetAsync("/openapi/v2.json");
         Assert.Equal(HttpStatusCode.OK, v1.StatusCode);
         Assert.Equal(HttpStatusCode.OK, v2.StatusCode);
-        var body = await v1.Content.ReadAsStringAsync();
-        Assert.Contains("courses", body, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("enrollments", body, StringComparison.OrdinalIgnoreCase);
+        var v1Document = await v1.Content.ReadFromJsonAsync<JsonElement>();
+        var v2Document = await v2.Content.ReadFromJsonAsync<JsonElement>();
+        var v1Paths = v1Document.GetProperty("paths");
+        var v2Paths = v2Document.GetProperty("paths");
+        Assert.True(v1Paths.TryGetProperty("/api/v1/courses", out _));
+        Assert.True(v1Paths.TryGetProperty("/api/v1/enrollments", out _));
+        Assert.False(v1Paths.TryGetProperty("/api/v2/enrollments", out _));
+        Assert.True(v2Paths.TryGetProperty("/api/v2/enrollments", out _));
+        Assert.False(v2Paths.TryGetProperty("/api/v1/courses", out _));
     }
 }

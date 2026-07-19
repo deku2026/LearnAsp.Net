@@ -57,4 +57,44 @@ public sealed class ModularMonolithTests : IClassFixture<CampusWebApplicationFac
         Assert.Equal("Part03_2_AppArchitecture", json.GetProperty("lab").GetString());
         Assert.Contains("catalog", json.GetProperty("dataIsolation").GetString()!, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task Capacity_and_duplicate_invariants_are_enforced_across_modules()
+    {
+        var course = await (await _client.PostAsJsonAsync("/api/v1/courses", new
+        {
+            code = $"CAP-{Guid.NewGuid():N}"[..16],
+            title = "Capacity",
+            credits = 2,
+        })).Content.ReadFromJsonAsync<JsonElement>();
+        var section = await (await _client.PostAsJsonAsync("/api/v1/sections", new
+        {
+            courseId = course.GetProperty("id").GetGuid(),
+            term = "2026F",
+            capacity = 1,
+        })).Content.ReadFromJsonAsync<JsonElement>();
+        var sectionId = section.GetProperty("id").GetGuid();
+        var firstStudent = Guid.NewGuid();
+
+        var first = await _client.PostAsJsonAsync(
+            "/api/v1/enrollments",
+            new { studentId = firstStudent, sectionId });
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(
+            "Confirmed",
+            (await first.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString());
+
+        var duplicate = await _client.PostAsJsonAsync(
+            "/api/v1/enrollments",
+            new { studentId = firstStudent, sectionId });
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+
+        var waitlisted = await _client.PostAsJsonAsync(
+            "/api/v1/enrollments",
+            new { studentId = Guid.NewGuid(), sectionId });
+        Assert.Equal(HttpStatusCode.Created, waitlisted.StatusCode);
+        Assert.Equal(
+            "Waitlisted",
+            (await waitlisted.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString());
+    }
 }

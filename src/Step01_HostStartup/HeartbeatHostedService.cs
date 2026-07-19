@@ -2,16 +2,30 @@ namespace Step01_HostStartup;
 
 public sealed class HeartbeatHostedService(
     ILogger<HeartbeatHostedService> logger,
-    IServiceScopeFactory scopeFactory) : BackgroundService
+    IServiceScopeFactory scopeFactory,
+    IHostApplicationLifetime lifetime) : BackgroundService
 {
+    private readonly object _stateLock = new();
     private long _tickCount;
     private Guid? _lastScopedId;
 
     public long TickCount => Interlocked.Read(ref _tickCount);
-    public Guid? LastScopedId => _lastScopedId;
+    public Guid? LastScopedId
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _lastScopedId;
+            }
+        }
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        lifetime.ApplicationStarted.Register(() => logger.LogInformation("Application started"));
+        lifetime.ApplicationStopping.Register(() => logger.LogInformation("Application stopping"));
+        lifetime.ApplicationStopped.Register(() => logger.LogInformation("Application stopped"));
         logger.LogInformation("HeartbeatHostedService started");
 
         // PeriodicTimer (preferred over Task.Delay loop): one tick-per-interval, no drift.
@@ -32,16 +46,16 @@ public sealed class HeartbeatHostedService(
                     // must go through IServiceScopeFactory — never inject scoped directly.
                     using var scope = scopeFactory.CreateScope();
                     var recorder = scope.ServiceProvider.GetRequiredService<TickRecorder>();
-                    _lastScopedId = recorder.InstanceId;
+                    lock (_stateLock)
+                    {
+                        _lastScopedId = recorder.InstanceId;
+                    }
+
                     logger.LogDebug("Scoped TickRecorder {Id}", recorder.InstanceId);
                 }
-                catch (InvalidOperationException ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "Heartbeat tick {Tick} work threw; continuing", TickCount);
-                }
-                catch (ArgumentException ex)
-                {
-                    logger.LogError(ex, "Heartbeat tick {Tick} arg error; continuing", TickCount);
                 }
             }
         }

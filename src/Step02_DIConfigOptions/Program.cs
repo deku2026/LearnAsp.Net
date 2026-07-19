@@ -8,6 +8,11 @@ using Microsoft.Extensions.Options;
 using Step02_DIConfigOptions;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
 
 // Three lifetimes
 builder.Services.AddTransient<TransientMarker>();
@@ -71,18 +76,20 @@ app.MapGet("/options", (IOptions<CampusLabOptions> opt, IOptionsSnapshot<CampusL
 
 app.MapGet("/options/watcher", (OptionsWatcher watcher) => Results.Ok(new { watcher.LastSeenLabName, watcher.LastSeenMaxSampleSize }));
 
-app.MapGet("/captive-demo", (ScopedResolverSingleton svc) => Results.Ok(new { resolvedIds = svc.ResolvedIds }));
+app.MapGet("/captive-demo", (ScopedResolverSingleton svc) => Results.Ok(new
+{
+    resolvedIds = svc.ResolveInIndependentScopes(2),
+}));
 
 app.MapGet("/counter", (ICounter counter) => Results.Ok(new { value = counter.Count(), decorated = counter is CachingCounter }));
 
 app.MapGet("/notifiers", (IEnumerable<INotifier> notifiers) =>
     Results.Ok(new { count = notifiers.Count(), types = notifiers.Select(n => n.GetType().Name).ToArray() }));
 
-app.MapGet("/channels/{key}", (string key, IServiceProvider sp) =>
-{
-    var channel = sp.GetRequiredKeyedService<IChannel>(key);
-    return Results.Ok(new { key, type = channel.GetType().Name, message = channel.Send() });
-});
+app.MapGet("/channels/email", ([FromKeyedServices("email")] IChannel channel) =>
+    Results.Ok(new { key = "email", type = channel.GetType().Name, message = channel.Send() }));
+app.MapGet("/channels/sms", ([FromKeyedServices("sms")] IChannel channel) =>
+    Results.Ok(new { key = "sms", type = channel.GetType().Name, message = channel.Send() }));
 
 app.Run();
 
@@ -131,47 +138,86 @@ namespace Step02_DIConfigOptions
     }
 
     // IOptionsMonitor.OnChange: singleton watches hot-reloads
-    public sealed class OptionsWatcher
+    public sealed class OptionsWatcher : IDisposable
     {
-        private readonly IOptionsMonitor<CampusLabOptions> _monitor;
+        private readonly object _stateLock = new();
+        private readonly IDisposable? _subscription;
         private string _lastSeenLabName;
         private int _lastSeenMaxSampleSize;
         private int _changeCount;
 
         public OptionsWatcher(IOptionsMonitor<CampusLabOptions> monitor)
         {
-            _monitor = monitor;
             _lastSeenLabName = monitor.CurrentValue.LabName;
             _lastSeenMaxSampleSize = monitor.CurrentValue.MaxSampleSize;
-            monitor.OnChange(o =>
+            _subscription = monitor.OnChange(o =>
             {
-                _lastSeenLabName = o.LabName;
-                _lastSeenMaxSampleSize = o.MaxSampleSize;
-                Interlocked.Increment(ref _changeCount);
+                lock (_stateLock)
+                {
+                    _lastSeenLabName = o.LabName;
+                    _lastSeenMaxSampleSize = o.MaxSampleSize;
+                    _changeCount++;
+                }
             });
         }
 
-        public string LastSeenLabName => _lastSeenLabName;
-        public int LastSeenMaxSampleSize => _lastSeenMaxSampleSize;
-        public int ChangeCount => _changeCount;
+        public string LastSeenLabName
+        {
+            get
+            {
+                lock (_stateLock)
+                {
+                    return _lastSeenLabName;
+                }
+            }
+        }
+
+        public int LastSeenMaxSampleSize
+        {
+            get
+            {
+                lock (_stateLock)
+                {
+                    return _lastSeenMaxSampleSize;
+                }
+            }
+        }
+
+        public int ChangeCount
+        {
+            get
+            {
+                lock (_stateLock)
+                {
+                    return _changeCount;
+                }
+            }
+        }
+
+        public void Dispose() => _subscription?.Dispose();
     }
 
     // Captive dependency: a singleton that safely resolves scoped via IServiceScopeFactory.
     // The UNSAFE version (injecting ScopedMarker directly) would throw with ValidateScopes=true.
     public sealed class ScopedResolverSingleton(IServiceScopeFactory scopeFactory)
     {
-        private readonly List<Guid> _resolvedIds = [];
-
-        public IReadOnlyList<Guid> ResolvedIds
+        public IReadOnlyList<Guid> ResolveInIndependentScopes(int count)
         {
-            get
+            var resolvedIds = new List<Guid>(count);
+            for (var i = 0; i < count; i++)
             {
                 using var scope = scopeFactory.CreateScope();
                 var marker = scope.ServiceProvider.GetRequiredService<ScopedMarker>();
-                _resolvedIds.Add(marker.Id);
-                return _resolvedIds.ToArray();
+                resolvedIds.Add(marker.Id);
             }
+
+            return resolvedIds;
         }
+    }
+
+    public sealed class CaptiveSingleton(ScopedMarker scopedMarker)
+    {
+        public Guid CapturedId { get; } = scopedMarker.Id;
     }
 
     // Scrutor decorator: ICounter → CachingCounter wraps Counter
@@ -189,8 +235,14 @@ namespace Step02_DIConfigOptions
     public sealed class CachingCounter(ICounter inner) : ICounter
     {
         private int _last;
-        public int Count() => _last = inner.Count();
-        public int LastValue => _last;
+        public int Count()
+        {
+            var value = inner.Count();
+            Interlocked.Exchange(ref _last, value);
+            return value;
+        }
+
+        public int LastValue => Volatile.Read(ref _last);
     }
 
     // INotifier multi-impl resolved via IEnumerable<INotifier>

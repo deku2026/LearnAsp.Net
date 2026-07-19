@@ -1,13 +1,10 @@
 using System.Net.Sockets;
-using Campus.Testing;
 using Docker.DotNet;
 using DotNet.Testcontainers.Builders;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
-using Part04_3_MultiTenant;
 using Testcontainers.PostgreSql;
 
 namespace Part04_3_MultiTenant.Tests;
@@ -20,7 +17,7 @@ public sealed class TenantFixture : IAsyncLifetime
     public bool IsAvailable { get; private set; }
     public string? SkipReason { get; private set; }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // 1) Try Testcontainers
         try
@@ -44,9 +41,10 @@ public sealed class TenantFixture : IAsyncLifetime
         // 2) Fallback: local PG
         if (_container is null)
         {
-            ConnectionString = Environment.GetEnvironmentVariable("CAMPUS_TENANT_TEST_PG")
-                               ?? Environment.GetEnvironmentVariable("CAMPUS_TEST_PG")
-                               ?? "Host=localhost;Port=5432;Database=campus_tenant_test;Username=dotnet;Password=dotnet_dev";
+            ConnectionString = FirstNonEmpty(
+                Environment.GetEnvironmentVariable("CAMPUS_TENANT_TEST_PG"),
+                Environment.GetEnvironmentVariable("CAMPUS_TEST_PG"),
+                "Host=localhost;Port=5432;Database=campus_tenant_test;Username=dotnet;Password=dotnet_dev");
             try
             {
                 await EnsureDatabaseExistsAsync(ConnectionString);
@@ -68,8 +66,7 @@ public sealed class TenantFixture : IAsyncLifetime
                 .UseNpgsql(ConnectionString).Options;
             var dummyTenant = new DummyTenant();
             await using var db = new TenantDbContext(options, dummyTenant);
-            try { await db.Database.MigrateAsync(); }
-            catch (NpgsqlException) { await db.Database.EnsureDeletedAsync(); await db.Database.MigrateAsync(); }
+            await db.Database.MigrateAsync();
             IsAvailable = true;
         }
         catch (NpgsqlException ex)
@@ -84,7 +81,7 @@ public sealed class TenantFixture : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_container is not null) await _container.DisposeAsync();
     }
@@ -129,9 +126,12 @@ public sealed class TenantFixture : IAsyncLifetime
             if (await exists.ExecuteScalarAsync() is not null) return;
         }
         await using var create = conn.CreateCommand();
-        create.CommandText = $"CREATE DATABASE \"{dbName}\"";
+        create.CommandText = $"CREATE DATABASE \"{dbName.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         await create.ExecuteNonQueryAsync();
     }
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.First(value => !string.IsNullOrWhiteSpace(value))!;
 
     private sealed class DummyTenant : ITenantContext
     {
@@ -146,7 +146,6 @@ public static class TenantSkip
 {
     public static void IfNotAvailable(TenantFixture fx)
     {
-        if (!fx.IsAvailable)
-            global::Xunit.Skip.If(fx.SkipReason is not null, fx.SkipReason ?? "PostgreSQL unavailable");
+        Assert.SkipWhen(!fx.IsAvailable, fx.SkipReason ?? "PostgreSQL unavailable");
     }
 }

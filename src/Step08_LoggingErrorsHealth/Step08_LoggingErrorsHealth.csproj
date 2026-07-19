@@ -3,6 +3,6 @@
     <ProjectReference Include="..\Campus.Contracts\Campus.Contracts.csproj" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.Seq" />
-    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <PackageReference Include="Npgsql" />
   </ItemGroup>
 </Project>
