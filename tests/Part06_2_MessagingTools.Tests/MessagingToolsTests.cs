@@ -124,21 +124,28 @@ public sealed class MessagingToolsTests(MessagingToolsFixture fixture)
         W7ToolsFactory factory)
     {
         var client = factory.CreateClient();
-        for (var attempt = 0; attempt < 30; attempt++)
+        try
         {
-            using var ready = await client.GetAsync("/health/ready");
-            if (ready.IsSuccessStatusCode)
+            for (var attempt = 0; attempt < 30; attempt++)
             {
-                using var purge = await client.PostAsync("/api/rabbit/purge", null);
-                purge.EnsureSuccessStatusCode();
-                return client;
+                using var ready = await client.GetAsync("/health/ready");
+                if (ready.IsSuccessStatusCode)
+                {
+                    using var purge = await client.PostAsync("/api/rabbit/purge", null);
+                    purge.EnsureSuccessStatusCode();
+                    return client;
+                }
+
+                await Task.Delay(100);
             }
 
-            await Task.Delay(100);
+            throw new TimeoutException("RabbitMQ lab did not become ready.");
         }
-
-        client.Dispose();
-        throw new TimeoutException("RabbitMQ lab did not become ready.");
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
     }
 
     private static async Task<RabbitNotification> WaitForNotificationAsync(
