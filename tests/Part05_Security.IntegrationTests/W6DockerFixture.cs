@@ -95,20 +95,22 @@ public sealed class W6DockerFixture : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var application in _applications)
+        foreach (var process in _applications)
         {
-            using var process = application;
-            try
+            using (process)
             {
-                if (!process.HasExited)
+                try
                 {
-                    process.Kill(entireProcessTree: true);
-                    await process.WaitForExitAsync();
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                        await process.WaitForExitAsync();
+                    }
                 }
-            }
-            catch (InvalidOperationException)
-            {
-                // The process already exited.
+                catch (InvalidOperationException)
+                {
+                    // The process already exited.
+                }
             }
         }
 
