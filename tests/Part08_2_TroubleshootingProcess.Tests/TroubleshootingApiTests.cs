@@ -43,15 +43,15 @@ public sealed class TroubleshootingApiTests :
     [Fact]
     public async Task FaultLabIsNotDiscoverableWhenDisabled()
     {
-        using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?>
-                        {
-                            ["Troubleshooting:FaultInjectionEnabled"] = "false",
-                            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = null,
-                        })));
+        using var baseFactory = new WebApplicationFactory<Program>();
+        using var factory = baseFactory.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["Troubleshooting:FaultInjectionEnabled"] = "false",
+                        ["OTEL_EXPORTER_OTLP_ENDPOINT"] = null,
+                    })));
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/lab/slow?delayMs=1");
