@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Campus.Contracts;
 using Campus.Testing;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 
@@ -95,10 +96,7 @@ public sealed class MiddlewareTests
     {
         // With the WRONG order (authz before authn), /whoami returns 401 even though
         // FakeAuthHandler always authenticates. The correct order would return 200.
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
-        {
-            b.UseSetting("Lab:AuthOrderExperiment", "true");
-        });
+        await using var factory = new Step03AuthOrderFactory();
         var client = factory.CreateClient();
         var response = await client.GetAsync("/whoami");
         // With wrong order, authorization fails because authentication hasn't run yet.
@@ -112,5 +110,14 @@ public sealed class MiddlewareTests
         var client = factory.CreateClient();
         var response = await client.GetAsync("/whoami");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+}
+
+/// <summary>Dedicated factory subclass for the auth-order experiment (CodeQL-safe: no intermediate disposable).</summary>
+file sealed class Step03AuthOrderFactory : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Lab:AuthOrderExperiment", "true");
     }
 }

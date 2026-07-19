@@ -57,9 +57,11 @@ jobs:
           config: |
             paths:
               - src
+              - tests
             paths-ignore:
               - '**/bin/**'
               - '**/obj/**'
+              - '**/Migrations/**'
 
       - name: Autobuild
         if: matrix.build-mode == 'autobuild'
