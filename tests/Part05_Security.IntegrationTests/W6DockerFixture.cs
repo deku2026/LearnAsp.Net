@@ -95,8 +95,9 @@ public sealed class W6DockerFixture : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var process in _applications)
+        foreach (var application in _applications)
         {
+            using var process = application;
             try
             {
                 if (!process.HasExited)
@@ -108,10 +109,6 @@ public sealed class W6DockerFixture : IAsyncLifetime
             catch (InvalidOperationException)
             {
                 // The process already exited.
-            }
-            finally
-            {
-                process.Dispose();
             }
         }
 
@@ -140,16 +137,17 @@ public sealed class W6DockerFixture : IAsyncLifetime
         string clientId = "campus-spa")
     {
         using var client = new HttpClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "password",
+            ["client_id"] = clientId,
+            ["username"] = username,
+            ["password"] = TestPassword,
+            ["scope"] = "openid campus.read campus.write",
+        });
         using var response = await client.PostAsync(
             $"{Authority}/protocol/openid-connect/token",
-            new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["grant_type"] = "password",
-                ["client_id"] = clientId,
-                ["username"] = username,
-                ["password"] = TestPassword,
-                ["scope"] = "openid campus.read campus.write",
-            }));
+            content);
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         return payload.GetProperty("access_token").GetString()
@@ -275,21 +273,23 @@ public sealed class W6DockerFixture : IAsyncLifetime
         using var client = new HttpClient();
         client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        await client.DeleteAsync($"{KeycloakBaseUrl}/admin/realms/{RealmName}");
+        using var response =
+            await client.DeleteAsync($"{KeycloakBaseUrl}/admin/realms/{RealmName}");
     }
 
     private async Task<string> GetAdminTokenAsync()
     {
         using var client = new HttpClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "password",
+            ["client_id"] = "admin-cli",
+            ["username"] = _adminUsername,
+            ["password"] = _adminPassword,
+        });
         using var response = await client.PostAsync(
             $"{KeycloakBaseUrl}/realms/master/protocol/openid-connect/token",
-            new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["grant_type"] = "password",
-                ["client_id"] = "admin-cli",
-                ["username"] = _adminUsername,
-                ["password"] = _adminPassword,
-            }));
+            content);
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         return payload.GetProperty("access_token").GetString()
@@ -298,7 +298,7 @@ public sealed class W6DockerFixture : IAsyncLifetime
 
     private JsonElement RealmRepresentation()
     {
-        var templatePath = Path.Combine(
+        var templatePath = Path.Join(
             FindRepositoryRoot(),
             "deploy",
             "keycloak",
@@ -333,19 +333,28 @@ public sealed class W6DockerFixture : IAsyncLifetime
         IReadOnlyDictionary<string, string?> environment)
     {
         var repository = FindRepositoryRoot();
+        var projectDirectory = projectName switch
+        {
+            "Part05_1_AuthnAuthz" => "Part05_1_AuthnAuthz",
+            "Part05_2_SpaAuth" => "Part05_2_SpaAuth",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(projectName),
+                projectName,
+                "Only the W6 applications can be started by this fixture."),
+        };
         var configuration = AppContext.BaseDirectory.Contains(
             $"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}",
             StringComparison.OrdinalIgnoreCase)
             ? "Release"
             : "Debug";
-        var assembly = Path.Combine(
+        var assembly = Path.Join(
             repository,
             "src",
-            projectName,
+            projectDirectory,
             "bin",
             configuration,
             "net10.0",
-            $"{projectName}.dll");
+            $"{projectDirectory}.dll");
         if (!File.Exists(assembly))
         {
             throw new FileNotFoundException(
@@ -365,25 +374,30 @@ public sealed class W6DockerFixture : IAsyncLifetime
         start.ArgumentList.Add($"http://127.0.0.1:{port}");
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
         start.Environment["DOTNET_NOLOGO"] = "1";
-        foreach (var pair in environment)
+        foreach (var pair in environment.Where(pair => pair.Value is not null))
         {
-            if (pair.Value is not null)
-            {
-                start.Environment[pair.Key] = pair.Value;
-            }
+            start.Environment[pair.Key] = pair.Value;
         }
 
         var process = new Process { StartInfo = start, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, args) => Capture(projectName, port, args.Data);
         process.ErrorDataReceived += (_, args) => Capture(projectName, port, args.Data);
-        if (!process.Start())
+        try
         {
-            throw new InvalidOperationException($"Could not start {projectName}.");
-        }
+            if (!process.Start())
+            {
+                throw new InvalidOperationException($"Could not start {projectName}.");
+            }
 
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        _applications.Add(process);
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            _applications.Add(process);
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
     }
 
     private void Capture(string project, int port, string? message)
@@ -452,10 +466,9 @@ public sealed class W6DockerFixture : IAsyncLifetime
 
     private static int FreeTcpPort()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
         return port;
     }
 
@@ -464,7 +477,7 @@ public sealed class W6DockerFixture : IAsyncLifetime
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "LearnAspNet.slnx")))
+            if (File.Exists(Path.Join(directory.FullName, "LearnAspNet.slnx")))
             {
                 return directory.FullName;
             }

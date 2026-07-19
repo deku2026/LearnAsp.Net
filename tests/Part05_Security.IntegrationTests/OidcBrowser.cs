@@ -97,7 +97,8 @@ public static partial class OidcBrowser
                 $"{diagnostics?.Invoke()}");
             var callback = FormAction(responseHtml, null);
             var fields = HiddenFields(responseHtml);
-            callbackResponse = await browser.PostAsync(callback, new FormUrlEncodedContent(fields));
+            using var callbackContent = new FormUrlEncodedContent(fields);
+            callbackResponse = await browser.PostAsync(callback, callbackContent);
         }
 
         using (callbackResponse)
@@ -197,16 +198,17 @@ public static partial class OidcBrowser
             return;
         }
 
-        foreach (var header in headers)
+        foreach (var cookie in headers
+                     .Select(header => header.Split(';', 2)[0])
+                     .Select(nameValue => new
+                     {
+                         NameValue = nameValue,
+                         Separator = nameValue.IndexOf('='),
+                     })
+                     .Where(cookie => cookie.Separator > 0))
         {
-            var nameValue = header.Split(';', 2)[0];
-            var separator = nameValue.IndexOf('=');
-            if (separator <= 0)
-            {
-                continue;
-            }
-
-            keycloakCookies[nameValue[..separator]] = nameValue[(separator + 1)..];
+            keycloakCookies[cookie.NameValue[..cookie.Separator]] =
+                cookie.NameValue[(cookie.Separator + 1)..];
         }
     }
 
@@ -254,20 +256,19 @@ public static partial class OidcBrowser
 
     private static Uri FormAction(string html, string? formId)
     {
-        foreach (Match form in FormRegex().Matches(html))
-        {
-            var tag = form.Value;
-            if (formId is not null &&
-                !tag.Contains($"id=\"{formId}\"", StringComparison.Ordinal))
-            {
-                continue;
-            }
+        var action = FormRegex()
+            .Matches(html)
+            .Cast<Match>()
+            .Select(form => form.Value)
+            .Where(tag =>
+                formId is null ||
+                tag.Contains($"id=\"{formId}\"", StringComparison.Ordinal))
+            .Select(tag => ActionRegex().Match(tag))
+            .FirstOrDefault(match => match.Success);
 
-            var action = ActionRegex().Match(tag);
-            if (action.Success)
-            {
-                return new Uri(WebUtility.HtmlDecode(action.Groups[1].Value));
-            }
+        if (action is not null)
+        {
+            return new Uri(WebUtility.HtmlDecode(action.Groups[1].Value));
         }
 
         throw new InvalidOperationException("Could not find the expected Keycloak form action.");
@@ -276,15 +277,18 @@ public static partial class OidcBrowser
     private static Dictionary<string, string> HiddenFields(string html)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (Match input in HiddenInputRegex().Matches(html))
+        foreach (var field in HiddenInputRegex()
+                     .Matches(html)
+                     .Cast<Match>()
+                     .Select(input => new
+                     {
+                         Name = NameRegex().Match(input.Value),
+                         Value = ValueRegex().Match(input.Value),
+                     })
+                     .Where(field => field.Name.Success))
         {
-            var name = NameRegex().Match(input.Value);
-            var value = ValueRegex().Match(input.Value);
-            if (name.Success)
-            {
-                result[WebUtility.HtmlDecode(name.Groups[1].Value)] =
-                    value.Success ? WebUtility.HtmlDecode(value.Groups[1].Value) : "";
-            }
+            result[WebUtility.HtmlDecode(field.Name.Groups[1].Value)] =
+                field.Value.Success ? WebUtility.HtmlDecode(field.Value.Groups[1].Value) : "";
         }
 
         return result;

@@ -47,25 +47,25 @@ public sealed class KeycloakRoleClaimsTransformation : IClaimsTransformation
         }
 
         using var document = JsonDocument.Parse(resourceAccess);
-        foreach (var client in document.RootElement.EnumerateObject())
+        foreach (var roles in document.RootElement
+                     .EnumerateObject()
+                     .Where(client => client.Value.TryGetProperty("roles", out _))
+                     .Select(client => client.Value.GetProperty("roles")))
         {
-            if (client.Value.TryGetProperty("roles", out var roles))
-            {
-                AddRoles(identity, roles);
-            }
+            AddRoles(identity, roles);
         }
     }
 
     private static void AddRoles(ClaimsIdentity identity, JsonElement roles)
     {
-        foreach (var role in roles.EnumerateArray())
+        foreach (var value in roles
+                     .EnumerateArray()
+                     .Select(role => role.GetString())
+                     .Where(value =>
+                         !string.IsNullOrWhiteSpace(value) &&
+                         !identity.HasClaim(ClaimTypes.Role, value)))
         {
-            var value = role.GetString();
-            if (!string.IsNullOrWhiteSpace(value) &&
-                !identity.HasClaim(ClaimTypes.Role, value))
-            {
-                identity.AddClaim(new Claim(ClaimTypes.Role, value));
-            }
+            identity.AddClaim(new Claim(ClaimTypes.Role, value!));
         }
     }
 }

@@ -26,11 +26,13 @@ public static class AuthnAuthzFactory
 
 public sealed class RealJwtFactory : CampusWebApplicationFactory<Program>, IDisposable
 {
+    private readonly System.Security.Cryptography.RSA _rsa;
     private readonly RsaSecurityKey _signingKey;
 
     public RealJwtFactory()
     {
-        _signingKey = new RsaSecurityKey(System.Security.Cryptography.RSA.Create(2048))
+        _rsa = System.Security.Cryptography.RSA.Create(2048);
+        _signingKey = new RsaSecurityKey(_rsa)
         {
             KeyId = "test-signing-key",
         };
@@ -91,10 +93,14 @@ public sealed class RealJwtFactory : CampusWebApplicationFactory<Program>, IDisp
         });
     }
 
-    void IDisposable.Dispose()
+    protected override void Dispose(bool disposing)
     {
-        _signingKey.Rsa?.Dispose();
-        base.Dispose();
+        if (disposing)
+        {
+            _rsa.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 }
 
