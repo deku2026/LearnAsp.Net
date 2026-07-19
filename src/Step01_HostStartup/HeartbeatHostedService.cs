@@ -35,9 +35,13 @@ public sealed class HeartbeatHostedService(
                     _lastScopedId = recorder.InstanceId;
                     logger.LogDebug("Scoped TickRecorder {Id}", recorder.InstanceId);
                 }
-                catch (Exception ex)
+                catch (InvalidOperationException ex)
                 {
                     logger.LogError(ex, "Heartbeat tick {Tick} work threw; continuing", TickCount);
+                }
+                catch (ArgumentException ex)
+                {
+                    logger.LogError(ex, "Heartbeat tick {Tick} arg error; continuing", TickCount);
                 }
             }
         }
