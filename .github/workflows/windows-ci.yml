@@ -63,8 +63,9 @@ jobs:
       - name: Build (Release)
         run: dotnet build LearnAspNet.slnx -c Release --no-restore
 
-      - name: Test (Release)
-        run: dotnet test LearnAspNet.slnx -c Release --no-build
+      - name: Test generic projects (Release)
+        # Docker-backed PostgreSQL/Redis suites run only in Linux CI.
+        run: dotnet test LearnAspNet.GenericTests.slnx -c Release --no-build
 
       - name: Run pre-commit hooks
         run: |

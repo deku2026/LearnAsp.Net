@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/Step01_HostStartup.Tests/Step01_HostStartup.Tests.csproj" />
+    <Project Path="tests/Step02_DIConfigOptions.Tests/Step02_DIConfigOptions.Tests.csproj" />
+    <Project Path="tests/Step03_MiddlewarePipeline.Tests/Step03_MiddlewarePipeline.Tests.csproj" />
+    <Project Path="tests/Step04_RoutingEndpoints.Tests/Step04_RoutingEndpoints.Tests.csproj" />
+    <Project Path="tests/Step05_MinimalApiVsController.Tests/Step05_MinimalApiVsController.Tests.csproj" />
+    <Project Path="tests/Step06_BindingValidationProblemDetails.Tests/Step06_BindingValidationProblemDetails.Tests.csproj" />
+    <Project Path="tests/Step07_AuthnAuthzEntry.Tests/Step07_AuthnAuthzEntry.Tests.csproj" />
+    <Project Path="tests/Step08_LoggingErrorsHealth.Tests/Step08_LoggingErrorsHealth.Tests.csproj" />
+    <Project Path="tests/Step10_HttpFoundation.Tests/Step10_HttpFoundation.Tests.csproj" />
+    <Project Path="tests/Part03_1_ApiDesign.Tests/Part03_1_ApiDesign.Tests.csproj" />
+    <Project Path="tests/Part03_2_AppArchitecture.Tests/Part03_2_AppArchitecture.Tests.csproj" />
+    <Project Path="tests/Part03_3_ProjectStructure.Tests/Part03_3_ProjectStructure.Tests.csproj" />
+    <Project Path="tests/Part03_4_ArchTesting.Tests/Part03_4_ArchTesting.Tests.csproj" />
+  </Folder>
+</Solution>
