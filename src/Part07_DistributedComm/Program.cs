@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using System.Text;
+using Campus.ServiceDefaults;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
@@ -16,6 +17,7 @@ using Yarp.ReverseProxy.Configuration;
 var builder = WebApplication.CreateBuilder(args);
 var role = builder.Configuration["Distributed:Role"]?.Trim() ?? "Gateway";
 
+builder.AddCampusServiceDefaults();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton(TimeProvider.System);
 

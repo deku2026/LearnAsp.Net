@@ -1,0 +1,55 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+  namespace: campus
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 2
+  maxReplicas: 10
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: rabbitmq
+  namespace: campus
+spec:
+  secretTargetRef:
+    - parameter: host
+      name: campus-secrets
+      key: rabbitmq-connection
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: enrollment-outbox
+  namespace: campus
+spec:
+  scaleTargetRef:
+    name: enrollment
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 20
+  triggers:
+    - type: rabbitmq
+      metadata:
+        protocol: amqp
+        queueName: campus.enrollment.created
+        mode: QueueLength
+        value: "20"
+      authenticationRef:
+        name: rabbitmq

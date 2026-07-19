@@ -1,0 +1,282 @@
+name: campus-w8
+
+x-app: &app
+  restart: unless-stopped
+  networks: [campus]
+  environment: &app-environment
+    ASPNETCORE_ENVIRONMENT: Production
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
+    OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+    Observability__SamplingRatio: "1.0"
+  depends_on:
+    aspire-dashboard:
+      condition: service_started
+
+x-part07: &part07
+  <<: *app
+  build:
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+    args:
+      PROJECT: src/Part07_DistributedComm/Part07_DistributedComm.csproj
+  image: campus/part07-distributed:${IMAGE_TAG:-local}
+  command: Part07_DistributedComm.dll
+  environment: &part07-environment
+    <<: *app-environment
+    ConnectionStrings__RabbitMQ: amqp://${RABBITMQ_USER:?Set RABBITMQ_USER}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}@rabbitmq:5672/
+    GatewayAuth__Issuer: campus-gateway
+    GatewayAuth__Audience: campus-capstone
+    GatewayAuth__SigningKey: ${GATEWAY_SIGNING_KEY:?Set GATEWAY_SIGNING_KEY}
+    GatewayAuth__InternalToken: ${GATEWAY_INTERNAL_TOKEN:?Set GATEWAY_INTERNAL_TOKEN}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+    aspire-dashboard:
+      condition: service_started
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/10-campus.sql:ro
+    networks: [campus]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:8.8.0-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes"]
+    volumes:
+      - redis-data:/data
+    networks: [campus]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4.3.2-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks: [campus]
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.4.2
+    restart: unless-stopped
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+      DASHBOARD__OTLP__AUTHMODE: Unsecured
+      DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+    ports:
+      - "18888:18888"
+      - "4317:18889"
+      - "4318:18890"
+    networks: [campus]
+
+  seq:
+    image: datalust/seq:2025.2.16202
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
+    volumes:
+      - seq-data:/data
+    ports:
+      - "5341:80"
+    networks: [campus]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost/]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    restart: unless-stopped
+    command: [start-dev]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:?Set KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    ports:
+      - "8082:8080"
+    networks: [campus]
+
+  mailpit:
+    image: axllent/mailpit:v1.30.4
+    restart: unless-stopped
+    ports:
+      - "1125:1025"
+      - "8025:8025"
+    networks: [campus]
+
+  kafka:
+    image: apache/kafka:4.3.1
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks: [campus]
+    healthcheck:
+      test: [CMD-SHELL, "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  catalog:
+    <<: *part07
+    environment:
+      <<: *part07-environment
+      Distributed__Role: Catalog
+      ConnectionStrings__Catalog: Host=postgres;Port=5432;Database=campus_w7_catalog;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:8081
+      Kestrel__Endpoints__Grpc__Protocols: Http2
+    expose: ["8080", "8081"]
+
+  notices:
+    <<: *part07
+    environment:
+      <<: *part07-environment
+      Distributed__Role: Notices
+      ConnectionStrings__Messaging: Host=postgres;Port=5432;Database=campus_w7_notices;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+    expose: ["8080"]
+
+  enrollment:
+    <<: *part07
+    environment:
+      <<: *part07-environment
+      Distributed__Role: Enrollment
+      Distributed__CatalogGrpcUrl: http://catalog:8081
+      Distributed__NoticesUrl: http://notices:8080
+      ConnectionStrings__Enrollment: Host=postgres;Port=5432;Database=campus_w7_enrollment;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+    expose: ["8080"]
+    depends_on:
+      catalog:
+        condition: service_healthy
+      notices:
+        condition: service_healthy
+
+  gateway:
+    <<: *part07
+    environment:
+      <<: *part07-environment
+      Distributed__Role: Gateway
+      Distributed__CatalogHttpUrl: http://catalog:8080
+      Distributed__EnrollmentUrl: http://enrollment:8080
+      Distributed__NoticesUrl: http://notices:8080
+    ports:
+      - "7000:8080"
+    depends_on:
+      catalog:
+        condition: service_healthy
+      enrollment:
+        condition: service_healthy
+      notices:
+        condition: service_healthy
+
+  troubleshooting:
+    <<: *app
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        PROJECT: src/Part08_2_TroubleshootingProcess/Part08_2_TroubleshootingProcess.csproj
+    image: campus/troubleshooting:${IMAGE_TAG:-local}
+    command: Part08_2_TroubleshootingProcess.dll
+    environment:
+      <<: *app-environment
+      ConnectionStrings__Troubleshooting: Host=postgres;Port=5432;Database=campus_w8_troubleshooting;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Maximum Pool Size=20
+      Troubleshooting__FaultInjectionEnabled: "false"
+      Troubleshooting__LabToken: ${TROUBLESHOOTING_LAB_TOKEN:?Set TROUBLESHOOTING_LAB_TOKEN}
+    expose: ["8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      aspire-dashboard:
+        condition: service_started
+
+  telemetry:
+    <<: *app
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        PROJECT: src/Part08_1_OpenTelemetry/Part08_1_OpenTelemetry.csproj
+    image: campus/telemetry:${IMAGE_TAG:-local}
+    command: Part08_1_OpenTelemetry.dll
+    environment:
+      <<: *app-environment
+      Troubleshooting__BaseUrl: http://troubleshooting:8080
+    ports:
+      - "7081:8080"
+    depends_on:
+      troubleshooting:
+        condition: service_healthy
+
+  deployment:
+    <<: *app
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        PROJECT: src/Part09_Deployment/Part09_Deployment.csproj
+    image: campus/deployment:${IMAGE_TAG:-local}
+    command: Part09_Deployment.dll
+    environment:
+      <<: *app-environment
+      Deployment__Revision: ${IMAGE_TAG:-local}
+      Deployment__Strategy: rolling
+    ports:
+      - "7090:8080"
+
+networks:
+  campus:
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  seq-data:
+  keycloak-data:
+  kafka-data:

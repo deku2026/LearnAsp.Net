@@ -1,8 +1,8 @@
 # LearnAspNet · 现代 ASP.NET Core 10 / .NET 10 实战学习仓库
 
 按 `C:/MyFile/ArcForges/ArchitectureDesign/ASP.NetStudy/ASP.NET-Core-net10-学习路线图.md`
-逐步实现的 **31 个独立 `WebApplication` 实验**，每个对应路线图里的一个「步骤 N」或「第 N 部分-M」详解 md。
-已推进到 W7；完成阶段使用真实应用代码、数据库/中间件和集成测试，后续阶段保留可运行占位。
+逐步实现的 **31 个实验**，每个对应路线图里的一个「步骤 N」或「第 N 部分-M」详解 md。
+已推进到 W8；完成阶段使用真实应用代码、数据库/中间件、可观测性、部署资产和集成测试，后续阶段保留可运行占位。
 
 阶段 14（Unity 接轨附录）不涉及；本仓不重写路线图，文档保留在 ArcForges 原位。
 
@@ -14,10 +14,12 @@
 - W5：Part04_1–3
 - W6：Part05_1–2，详见 [Keycloak + SPA/BFF 安全实战](docs/w6-part05-security-lab.md)
 - W7：Part06_1–Part07，详见 [消息模式、RabbitMQ 与分布式通信实战](docs/w7-messaging-distributed-lab.md)
+- W8：Part08_1–Part10，详见 [可观测性、排障、部署与 Aspire 实战](docs/W8_IMPLEMENTATION.md)
 
 ## 工作原理
 
-整仓一个 SLNX 解决方案 + **31 个独立 `Microsoft.NET.Sdk.Web` exe**。每个占位项目长这样：
+整仓一个 SLNX 解决方案；业务实验是独立 `Microsoft.NET.Sdk.Web`
+进程，Part10 是真正的 Aspire AppHost。尚未实现的占位项目长这样：
 
 ```csharp
 // LearnAspNet · Step01 · 承载与启动模型 (placeholder)
@@ -85,7 +87,7 @@ dotnet format LearnAspNet.slnx
 | 23 | `Part08_1_OpenTelemetry` | 5023 | 第8部分-1-OpenTelemetry |
 | 24 | `Part08_2_TroubleshootingProcess` | 5024 | 第8部分-2-生产排障流程 |
 | 25 | `Part09_Deployment` | 5025 | 第9部分-部署 |
-| 26 | `Part10_Aspire` | 5026 | 第10部分-Aspire (后期升级为 Aspire.Hosting.Sdk) |
+| 26 | `Part10_Aspire` | Aspire 动态分配 | 第10部分-Aspire AppHost |
 | 27 | `Part11_1_PerformanceAdvanced` | 5027 | 第11部分-1-性能进阶 |
 | 28 | `Part11_2_NativeAotTrim` | 5028 | 第11部分-2-NativeAOT与Trim |
 | 29 | `Part11_3_FrameworkSource` | 5029 | 第11部分-3-框架源码精读 |

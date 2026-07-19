@@ -1,0 +1,383 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: campus
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: campus-config
+  namespace: campus
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability:4317
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  GatewayAuth__Issuer: campus-gateway
+  GatewayAuth__Audience: campus-capstone
+  Distributed__CatalogHttpUrl: http://catalog:8080
+  Distributed__CatalogGrpcUrl: http://catalog:8081
+  Distributed__EnrollmentUrl: http://enrollment:8080
+  Distributed__NoticesUrl: http://notices:8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  namespace: campus
+  labels:
+    app.kubernetes.io/name: catalog
+    app.kubernetes.io/part-of: campus-capstone
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog
+        app.kubernetes.io/part-of: campus-capstone
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: catalog
+          image: ghcr.io/owner/learnaspnet/part07:sha-replace
+          imagePullPolicy: IfNotPresent
+          args: [Part07_DistributedComm.dll]
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: grpc, containerPort: 8081 }
+          envFrom:
+            - configMapRef: { name: campus-config }
+          env:
+            - { name: Distributed__Role, value: Catalog }
+            - { name: Kestrel__Endpoints__Http__Url, value: "http://0.0.0.0:8080" }
+            - { name: Kestrel__Endpoints__Http__Protocols, value: Http1 }
+            - { name: Kestrel__Endpoints__Grpc__Url, value: "http://0.0.0.0:8081" }
+            - { name: Kestrel__Endpoints__Grpc__Protocols, value: Http2 }
+            - name: ConnectionStrings__Catalog
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: catalog-connection }
+            - name: GatewayAuth__InternalToken
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: gateway-internal-token }
+          startupProbe: &startup
+            httpGet: { path: /health/live, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe: &liveness
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe: &readiness
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext: &security
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1654
+            seccompProfile: { type: RuntimeDefault }
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: campus
+spec:
+  selector: { app.kubernetes.io/name: catalog }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: grpc, port: 8081, targetPort: grpc }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notices
+  namespace: campus
+  labels:
+    app.kubernetes.io/name: notices
+    app.kubernetes.io/part-of: campus-capstone
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: notices }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notices
+        app.kubernetes.io/part-of: campus-capstone
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: notices
+          image: ghcr.io/owner/learnaspnet/part07:sha-replace
+          args: [Part07_DistributedComm.dll]
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: campus-config }
+          env:
+            - { name: Distributed__Role, value: Notices }
+            - name: ConnectionStrings__Messaging
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: notices-connection }
+            - name: ConnectionStrings__RabbitMQ
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: rabbitmq-connection }
+            - name: GatewayAuth__InternalToken
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: gateway-internal-token }
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1654
+            seccompProfile: { type: RuntimeDefault }
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notices
+  namespace: campus
+spec:
+  selector: { app.kubernetes.io/name: notices }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enrollment
+  namespace: campus
+  labels:
+    app.kubernetes.io/name: enrollment
+    app.kubernetes.io/part-of: campus-capstone
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: enrollment }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: enrollment
+        app.kubernetes.io/part-of: campus-capstone
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: enrollment
+          image: ghcr.io/owner/learnaspnet/part07:sha-replace
+          args: [Part07_DistributedComm.dll]
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: campus-config }
+          env:
+            - { name: Distributed__Role, value: Enrollment }
+            - name: ConnectionStrings__Enrollment
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: enrollment-connection }
+            - name: ConnectionStrings__RabbitMQ
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: rabbitmq-connection }
+            - name: GatewayAuth__InternalToken
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: gateway-internal-token }
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 150m, memory: 192Mi }
+            limits: { cpu: "1", memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1654
+            seccompProfile: { type: RuntimeDefault }
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: enrollment
+  namespace: campus
+spec:
+  selector: { app.kubernetes.io/name: enrollment }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: campus
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/part-of: campus-capstone
+spec:
+  replicas: 2
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway
+        app.kubernetes.io/part-of: campus-capstone
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gateway
+          image: ghcr.io/owner/learnaspnet/part07:sha-replace
+          args: [Part07_DistributedComm.dll]
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: campus-config }
+          env:
+            - { name: Distributed__Role, value: Gateway }
+            - name: GatewayAuth__SigningKey
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: gateway-signing-key }
+            - name: GatewayAuth__InternalToken
+              valueFrom:
+                secretKeyRef: { name: campus-secrets, key: gateway-internal-token }
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 200m, memory: 192Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1654
+            seccompProfile: { type: RuntimeDefault }
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+  namespace: campus
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: campus
+spec:
+  selector: { app.kubernetes.io/name: gateway }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway
+  namespace: campus
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: campus.example.invalid
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port: { name: http }

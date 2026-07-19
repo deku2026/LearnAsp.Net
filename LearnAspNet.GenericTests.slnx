@@ -15,5 +15,8 @@
     <Project Path="tests/Part03_4_ArchTesting.Tests/Part03_4_ArchTesting.Tests.csproj" />
     <Project Path="tests/Part05_1_AuthnAuthz.Tests/Part05_1_AuthnAuthz.Tests.csproj" />
     <Project Path="tests/Part05_2_SpaAuth.Tests/Part05_2_SpaAuth.Tests.csproj" />
+    <Project Path="tests/Part08_1_OpenTelemetry.Tests/Part08_1_OpenTelemetry.Tests.csproj" />
+    <Project Path="tests/Part08_2_TroubleshootingProcess.Tests/Part08_2_TroubleshootingProcess.Tests.csproj" />
+    <Project Path="tests/Part09_Deployment.Tests/Part09_Deployment.Tests.csproj" />
   </Folder>
 </Solution>
