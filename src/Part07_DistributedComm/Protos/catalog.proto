@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+option csharp_namespace = "Part07_DistributedComm.Grpc";
+package campus.catalog.v1;
+
+service Catalog {
+  rpc GetCourse (GetCourseRequest) returns (CourseReply);
+  rpc WatchAvailability (WatchAvailabilityRequest) returns (stream AvailabilityReply);
+}
+
+message GetCourseRequest {
+  string course_id = 1;
+}
+
+message CourseReply {
+  string course_id = 1;
+  string code = 2;
+  string title = 3;
+  int32 available_seats = 4;
+}
+
+message WatchAvailabilityRequest {
+  string course_id = 1;
+  int32 samples = 2;
+}
+
+message AvailabilityReply {
+  string course_id = 1;
+  int32 available_seats = 2;
+  int64 observed_on_unix_ms = 3;
+}
