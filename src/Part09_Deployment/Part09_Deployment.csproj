@@ -1,2 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\Campus.ServiceDefaults\Campus.ServiceDefaults.csproj" />
+  </ItemGroup>
 </Project>

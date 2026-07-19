@@ -1,2 +1,18 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Aspire.AppHost.Sdk/13.4.6">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>campus-learning-part10-aspire</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Docker" />
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.RabbitMQ" />
+    <PackageReference Include="Aspire.Hosting.Redis" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Part07_DistributedComm\Part07_DistributedComm.csproj" />
+    <ProjectReference Include="..\Part08_1_OpenTelemetry\Part08_1_OpenTelemetry.csproj" />
+    <ProjectReference Include="..\Part08_2_TroubleshootingProcess\Part08_2_TroubleshootingProcess.csproj" />
+    <ProjectReference Include="..\Part09_Deployment\Part09_Deployment.csproj" />
+  </ItemGroup>
 </Project>

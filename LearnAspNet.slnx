@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Campus.HealthProbe/Campus.HealthProbe.csproj" />
+    <Project Path="src/Campus.ServiceDefaults/Campus.ServiceDefaults.csproj" />
     <Project Path="src/Campus.Contracts/Campus.Contracts.csproj" />
     <Project Path="src/Campus.Security/Campus.Security.csproj" />
     <Project Path="src/Campus.Testing/Campus.Testing.csproj" />
@@ -70,5 +72,8 @@
     <Project Path="tests/Part06_1_MessagingPatterns.Tests/Part06_1_MessagingPatterns.Tests.csproj" />
     <Project Path="tests/Part06_2_MessagingTools.Tests/Part06_2_MessagingTools.Tests.csproj" />
     <Project Path="tests/Part07_DistributedComm.Tests/Part07_DistributedComm.Tests.csproj" />
+    <Project Path="tests/Part08_1_OpenTelemetry.Tests/Part08_1_OpenTelemetry.Tests.csproj" />
+    <Project Path="tests/Part08_2_TroubleshootingProcess.Tests/Part08_2_TroubleshootingProcess.Tests.csproj" />
+    <Project Path="tests/Part09_Deployment.Tests/Part09_Deployment.Tests.csproj" />
   </Folder>
 </Solution>

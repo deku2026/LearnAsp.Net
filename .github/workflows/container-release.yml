@@ -1,0 +1,174 @@
+name: Container release
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/Part07_DistributedComm/**'
+      - 'src/Part08_1_OpenTelemetry/**'
+      - 'src/Part08_2_TroubleshootingProcess/**'
+      - 'src/Part09_Deployment/**'
+      - 'src/Campus.ServiceDefaults/**'
+      - 'src/Campus.HealthProbe/**'
+      - 'deploy/docker/**'
+      - '.github/workflows/container-release.yml'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      deploy_aca:
+        description: Deploy the gateway image to the protected ACA environment
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-pr:
+    name: Verify ${{ matrix.image }} image
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: part07
+            project: src/Part07_DistributedComm/Part07_DistributedComm.csproj
+          - image: telemetry
+            project: src/Part08_1_OpenTelemetry/Part08_1_OpenTelemetry.csproj
+          - image: troubleshooting
+            project: src/Part08_2_TroubleshootingProcess/Part08_2_TroubleshootingProcess.csproj
+          - image: deployment
+            project: src/Part09_Deployment/Part09_Deployment.csproj
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build without publishing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          build-args: PROJECT=${{ matrix.project }}
+          platforms: linux/amd64
+          push: false
+          tags: campus/${{ matrix.image }}:pr-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          provenance: mode=max
+          sbom: true
+
+  release-images:
+    name: Publish ${{ matrix.image }} image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: part07
+            project: src/Part07_DistributedComm/Part07_DistributedComm.csproj
+          - image: telemetry
+            project: src/Part08_1_OpenTelemetry/Part08_1_OpenTelemetry.csproj
+          - image: troubleshooting
+            project: src/Part08_2_TroubleshootingProcess/Part08_2_TroubleshootingProcess.csproj
+          - image: deployment
+            project: src/Part09_Deployment/Part09_Deployment.csproj
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/learnaspnet/${{ matrix.image }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=tag
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          build-args: PROJECT=${{ matrix.project }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest pushed image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/learnaspnet/${{ matrix.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  deploy-aca:
+    name: Deploy ACA gateway
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_aca
+    needs: release-images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Azure login with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy immutable gateway revision
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/learnaspnet/part07:sha-${{ github.sha }}
+          GATEWAY_SIGNING_KEY: ${{ secrets.GATEWAY_SIGNING_KEY }}
+          GATEWAY_INTERNAL_TOKEN: ${{ secrets.GATEWAY_INTERNAL_TOKEN }}
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file deploy/bicep/main.bicep \
+            --parameters image="$IMAGE" \
+            --parameters gatewaySigningKey="$GATEWAY_SIGNING_KEY" \
+            --parameters gatewayInternalToken="$GATEWAY_INTERNAL_TOKEN"

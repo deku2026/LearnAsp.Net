@@ -13,6 +13,7 @@ TestResults/
 secrets.json
 appsettings.*.local.json
 **/*.dev.json
+**/.env
 *.pidb
 *.cache
 
