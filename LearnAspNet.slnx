@@ -60,5 +60,8 @@
     <Project Path="tests/Part03_2_AppArchitecture.Tests/Part03_2_AppArchitecture.Tests.csproj" />
     <Project Path="tests/Part03_3_ProjectStructure.Tests/Part03_3_ProjectStructure.Tests.csproj" />
     <Project Path="tests/Part03_4_ArchTesting.Tests/Part03_4_ArchTesting.Tests.csproj" />
+    <Project Path="tests/Part04_1_EFCore.Tests/Part04_1_EFCore.Tests.csproj" />
+    <Project Path="tests/Part04_2_Caching.Tests/Part04_2_Caching.Tests.csproj" />
+    <Project Path="tests/Part04_3_MultiTenant.Tests/Part04_3_MultiTenant.Tests.csproj" />
   </Folder>
 </Solution>
