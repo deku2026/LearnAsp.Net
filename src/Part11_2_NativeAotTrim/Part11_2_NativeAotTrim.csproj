@@ -1,2 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AnalysisLevel>latest</AnalysisLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Part11_2_NativeAotTrim.Endpoints\Part11_2_NativeAotTrim.Endpoints.csproj" />
+  </ItemGroup>
 </Project>

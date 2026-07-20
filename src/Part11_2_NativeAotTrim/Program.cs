@@ -1,12 +1,36 @@
-// LearnAspNet placeholder
-// Doc   : ASP.NetStudy/第11部分-2-NativeAOT与Trim-完整实施指南.md
-// Part  : Part11-2 · NativeAotTrim
-// Title : NativeAOT 与 Trim (无 JIT · 单文件 · ReadyToRun)
+using Part11_2_NativeAotTrim;
+using Part11_2_NativeAotTrim.Endpoints;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateSlimBuilder(args);
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolver = AotJsonContext.Default;
+});
+
 var app = builder.Build();
 
-app.MapGet("/", () => "LearnAspNet · Part11-2 · NativeAOT 与 Trim — placeholder, fill src/Part11_2_NativeAotTrim/Program.cs");
+app.MapCourseEndpoints();
+
+app.MapPost("/api/enrollments/validate", (ValidateEnrollmentRequest request) =>
+{
+    if (request.StudentId == Guid.Empty)
+    {
+        return Results.BadRequest(new ValidateEnrollmentResult(false, "studentId.required"));
+    }
+    var course = CourseCatalog.Find(request.CourseCode);
+    return course is null
+        ? Results.Ok(new ValidateEnrollmentResult(false, "course.not_found"))
+        : Results.Ok(new ValidateEnrollmentResult(true, "ok"));
+});
+
+app.MapGet("/api/runtime-shape", () => new RuntimeShapeDto(
+    PublishForm: "NativeAOT",
+    Framework: System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+    ProcessArchitecture: System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
+    IsAotCompatible: true));
+
+app.MapGet("/health/live", () => Results.Ok());
+app.MapGet("/health/ready", () => Results.Ok());
 
 app.Run();
 

@@ -11,6 +11,6 @@
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Part11_1_PerformanceAdvanced\Part11_1_PerformanceAdvanced.csproj" />
+    <ProjectReference Include="..\..\src\Part11_2_NativeAotTrim\Part11_2_NativeAotTrim.csproj" />
   </ItemGroup>
 </Project>
