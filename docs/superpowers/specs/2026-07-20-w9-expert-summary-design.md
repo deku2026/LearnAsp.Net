@@ -427,7 +427,47 @@ Definition of done matches plan §12.6.
 Each commit is self-contained: build + generic tests + pre-commit clean before
 the next begins. Bot/CI fixes are separate commits, no history rewrites.
 
-## 7. Risks and mitigations (plan §16, top items for W9)
+## 7. Infrastructure findings (verified in Debian WSL before implementation)
+
+Recorded so the lab code uses the real environment, not guesses:
+
+- **WSL**: Debian 13, user `sammiller`, .NET SDK 10.0.302, runtime 10.0.10,
+  global tools present: `aspire.cli` 13.4.6, `dotnet-counters/dump/trace/
+  gcdump/stack` 9.0.661903, `dotnet-ef` 10.0.10. k6 is run via
+  `docker run --rm --network host grafana/k6:2.0.0` (matches the W8 script).
+- **All 10 containers up** and verified: `dotnet-postgres` (5432, healthy),
+  `dotnet-redis` (6380, healthy), `dotnet-rabbitmq` (5672/15672, healthy),
+  `dotnet-keycloak` (8082), `dotnet-seq` (5341, healthy),
+  `dotnet-aspire-dashboard` (18888/4317/4318), `dotnet-mailpit` (1125/8025,
+  healthy, v1.30.4, HTTP API confirmed), `dotnet-kafka` (9094, healthy),
+  `dotnet-adminer` (8081), `dotnet-redis-insight` (5540).
+- **Kafka image is `apache/kafka:4.3.1`** (NOT bitnami). The CLI path is
+  `/opt/kafka/bin/kafka-topics.sh` inside the container. EXTERNAL listener is
+  `localhost:9094`. `KAFKA_AUTO_CREATE_TOPICS_ENABLE=true`,
+  `KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0` (good for fast tests),
+  `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1` (single broker). Topic
+  create/list/describe/delete verified working. Note: Kafka warns that topic
+  names mixing `.` and `_` collide in metrics — W9 topics use only `.` and a
+  `.v1` suffix (e.g. `campus.enrollment.activity.v1`), never `_` in the topic
+  name. Tests create unique topics and delete them in teardown (or use short
+  retention) so repeated runs do not accumulate.
+- **Native AOT toolchain**: `clang` is NOT installed and the dev headers
+  (`zlib1g-dev`, `libssl-dev`) are missing. `libssl3` and `zlib1g` runtime libs
+  are present. Part11_2 AOT publish step will install
+  `clang zlib1g-dev libssl-dev` (the .NET NativeAOT prerequisites for Debian)
+  before `dotnet publish -r linux-x64`. This install is a one-time WSL setup
+  step, documented in the AOT script, not something CI relies on (Linux CI
+  installs its own toolchain per the workflow).
+- **Postgres per-wave DB pattern**: existing `deploy/docker/postgres-init.sql`
+  creates `campus_w7_catalog`, `campus_w7_enrollment`, `campus_w7_notices`,
+  `campus_w8_troubleshooting`. W9 adds `campus_w9_notifications` (Quartz job
+  store) to the same init file. The init runs against the running
+  `dotnet-postgres` container (the script uses `\gexec`).
+- **Compose file**: `~/Project/docker/docker-compose.yml`, `name: dotnet-stack`,
+  single `dotnet-net` bridge network, named volumes for postgres/redis/
+  rabbitmq/seq/keycloak/kafka. No profiles (full stack always up).
+
+## 8. Risks and mitigations (plan §16, top items for W9)
 
 - Performance numbers not reproducible -> every benchmark/script records env.
 - Averages as performance -> P95/P99, error rate, throughput, saturation.
@@ -454,7 +494,7 @@ the next begins. Bot/CI fixes are separate commits, no history rewrites.
 - Summary going stale again -> manifest + tests check consistency against the
   real repo.
 
-## 8. Verification before claiming done (plan §17)
+## 9. Verification before claiming done (plan §17)
 
 - 31 labs non-placeholder.
 - Generic .NET capabilities cross-platform; Docker/AOT/Kafka/Mailpit on Linux.
