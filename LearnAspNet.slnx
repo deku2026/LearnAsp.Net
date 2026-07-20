@@ -79,6 +79,7 @@
     <Project Path="tests/Part11_1_PerformanceAdvanced.Tests/Part11_1_PerformanceAdvanced.Tests.csproj" />
     <Project Path="tests/Part11_2_NativeAotTrim.Tests/Part11_2_NativeAotTrim.Tests.csproj" />
     <Project Path="tests/Part11_3_FrameworkSource.Tests/Part11_3_FrameworkSource.Tests.csproj" />
+    <Project Path="tests/Part12_ElectiveBranches.Tests/Part12_ElectiveBranches.Tests.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Part11_1_PerformanceBenchmarks/Part11_1_PerformanceBenchmarks.csproj" />

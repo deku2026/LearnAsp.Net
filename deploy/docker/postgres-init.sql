@@ -17,3 +17,8 @@ SELECT 'CREATE DATABASE campus_w8_troubleshooting'
 WHERE NOT EXISTS (
   SELECT FROM pg_database WHERE datname = 'campus_w8_troubleshooting'
 )\gexec
+
+SELECT 'CREATE DATABASE campus_w9_notifications'
+WHERE NOT EXISTS (
+  SELECT FROM pg_database WHERE datname = 'campus_w9_notifications'
+)\gexec
