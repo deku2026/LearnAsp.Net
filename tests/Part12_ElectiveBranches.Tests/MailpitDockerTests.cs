@@ -55,13 +55,14 @@ public sealed class MailpitDockerTests(Part12Fixture fixture)
         using var client = await CreateReadyClientAsync(factory);
 
         var idemKey = $"idem-{Guid.NewGuid():N}";
-        var request = new { Recipient = "student@example.test", Subject = "dup test", HtmlBody = "<p>dup</p>", TextBody = (string?)"dup", IdempotencyKey = idemKey };
+        var requestContent = JsonContent.Create(new { Recipient = "student@example.test", Subject = "dup test", HtmlBody = "<p>dup</p>", TextBody = (string?)"dup" });
+        client.DefaultRequestHeaders.Add("Idempotency-Key", idemKey);
 
-        using var first = await client.PostAsJsonAsync("/api/notifications/email", request);
+        using var first = await client.PostAsync("/api/notifications/email", requestContent);
         first.EnsureSuccessStatusCode();
         var firstResult = await first.Content.ReadFromJsonAsync<ScheduleResponse>();
 
-        using var second = await client.PostAsJsonAsync("/api/notifications/email", request);
+        using var second = await client.PostAsync("/api/notifications/email", requestContent);
         second.EnsureSuccessStatusCode();
         var secondResult = await second.Content.ReadFromJsonAsync<ScheduleResponse>();
 
@@ -94,5 +95,6 @@ public sealed class MailpitDockerTests(Part12Fixture fixture)
     private sealed record ScheduleResponse(Guid JobId);
     private sealed record EmailJobStatus(Guid JobId, string State, int Attempts, string? ProviderMessageId, DateTimeOffset ScheduledAt, DateTimeOffset? CompletedAt);
     private sealed record MailpitMessages(MailpitMessage[] Messages);
-    private sealed record MailpitMessage(string Subject, string To);
+    private sealed record MailpitMessage(string Subject, MailpitAddress[] To);
+    private sealed record MailpitAddress(string Address, string Name);
 }

@@ -106,6 +106,7 @@ public sealed class EmailJobStore
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
             {
+                await reader.DisposeAsync();
                 await transaction.CommitAsync(cancellationToken);
                 return null;
             }
