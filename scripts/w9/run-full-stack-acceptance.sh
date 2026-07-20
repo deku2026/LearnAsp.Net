@@ -46,7 +46,7 @@ done
 # Per-container role-level checks.
 check_postgres() {
   echo "## PostgreSQL"
-  if PGPASSWORD=dotnet_dev psql -h localhost -p 5432 -U dotnet -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+  if docker exec dotnet-postgres psql -U dotnet -d postgres -c "SELECT 1" >/dev/null 2>&1; then
     echo "  OK: connect + SELECT 1"
   else
     echo "  FAIL: connect"
@@ -73,10 +73,10 @@ check_redis() {
 
 check_rabbitmq() {
   echo "## RabbitMQ"
-  if curl --fail --silent http://localhost:15672/api/overview >/dev/null 2>&1; then
-    echo "  OK: management API ready"
+  if docker exec dotnet-rabbitmq rabbitmq-diagnostics -q ping >/dev/null 2>&1; then
+    echo "  OK: diagnostics ping"
   else
-    echo "  FAIL: management API"
+    echo "  FAIL: diagnostics ping"
   fi
 }
 
