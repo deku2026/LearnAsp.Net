@@ -18,5 +18,10 @@
     <Project Path="tests/Part08_1_OpenTelemetry.Tests/Part08_1_OpenTelemetry.Tests.csproj" />
     <Project Path="tests/Part08_2_TroubleshootingProcess.Tests/Part08_2_TroubleshootingProcess.Tests.csproj" />
     <Project Path="tests/Part09_Deployment.Tests/Part09_Deployment.Tests.csproj" />
+    <Project Path="tests/Part11_1_PerformanceAdvanced.Tests/Part11_1_PerformanceAdvanced.Tests.csproj" />
+    <Project Path="tests/Part11_2_NativeAotTrim.Tests/Part11_2_NativeAotTrim.Tests.csproj" />
+    <Project Path="tests/Part11_3_FrameworkSource.Tests/Part11_3_FrameworkSource.Tests.csproj" />
+    <Project Path="tests/Part12_ElectiveBranches.Tests/Part12_ElectiveBranches.Tests.csproj" />
+    <Project Path="tests/Part13_Summary.Tests/Part13_Summary.Tests.csproj" />
   </Folder>
 </Solution>

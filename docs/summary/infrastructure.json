@@ -1,0 +1,14 @@
+{
+  "containers": [
+    { "name": "postgres", "image": "postgres:18.4-alpine", "hostPort": 5432, "purpose": "primary database (EF, multi-tenant, Outbox/Inbox, three-service DBs, notifications)", "acceptance": "connect + migration + simple transaction", "realUse": true },
+    { "name": "redis", "image": "redis:8.8.0-alpine", "hostPort": 6380, "purpose": "cache config, BFF ticket, Data Protection, revocation state", "acceptance": "PING + SET/GET/TTL", "realUse": true },
+    { "name": "rabbitmq", "image": "rabbitmq:4.3.2-management-alpine", "hostPort": 5672, "managementPort": 15672, "purpose": "exchange/queue, confirm, ack, retry, DLQ, Capstone events", "acceptance": "management ready + W7 publish/consume/DLQ smoke", "realUse": true },
+    { "name": "keycloak", "image": "quay.io/keycloak/keycloak:26.7.0", "hostPort": 8082, "purpose": "OIDC, JWT, PKCE, PAR, logout", "acceptance": "discovery/JWKS + isolated realm protocol smoke", "realUse": true },
+    { "name": "seq", "image": "datalust/seq:latest", "hostPort": 5341, "purpose": "structured log target", "acceptance": "write structured event + API query by correlation id", "realUse": true },
+    { "name": "aspire-dashboard", "image": "mcr.microsoft.com/dotnet/nightly/aspire-dashboard:9.0", "hostPort": 18888, "otlpGrpcPort": 4317, "otlpHttpPort": 4318, "purpose": "OTLP logs/metrics/traces ingest and visualization", "acceptance": "OTLP ingest + cross-service trace", "realUse": true },
+    { "name": "kafka", "image": "apache/kafka:4.3.1", "hostPort": 9094, "purpose": "event stream + replay (W9 Part12)", "acceptance": "topic + produce + consume + group + replay", "realUse": true },
+    { "name": "mailpit", "image": "axllent/mailpit:latest", "smtpPort": 1125, "apiPort": 8025, "purpose": "durable background email test SMTP + API (W9 Part12)", "acceptance": "SMTP + API query", "realUse": true },
+    { "name": "adminer", "image": "adminer:5.5.0", "hostPort": 8081, "purpose": "database operations UI", "acceptance": "HTTP readiness + manual table inspection", "realUse": false },
+    { "name": "redis-insight", "image": "redislabs/redisinsight:latest", "hostPort": 5540, "purpose": "Redis operations UI", "acceptance": "HTTP readiness + manual key/TTL inspection", "realUse": false }
+  ]
+}
