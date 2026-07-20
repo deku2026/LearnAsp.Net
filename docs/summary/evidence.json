@@ -1,0 +1,21 @@
+{
+  "autoEvidence": [
+    { "lab": "Step01-Step10", "method": "WebApplicationFactory integration tests (xunit.v3)", "platform": "cross-platform generic + Linux Docker" },
+    { "lab": "Part03_1-Part03_4", "method": "WAF + NetArchTest + OpenAPI contract assertions", "platform": "cross-platform" },
+    { "lab": "Part04_1-Part04_3", "method": "WAF + Testcontainers PostgreSQL + Respawn", "platform": "Linux Docker" },
+    { "lab": "Part05_1-Part05_2", "method": "WAF + Keycloak OIDC browser protocol tests", "platform": "Linux Docker" },
+    { "lab": "Part06_1-Part07", "method": "WAF + RabbitMQ + gRPC + multi-process", "platform": "Linux Docker" },
+    { "lab": "Part08_1-Part08_2", "method": "WAF + OTel + diagnostics scripts + k6", "platform": "Linux Docker + WSL" },
+    { "lab": "Part09-Part10", "method": "Docker build + K8s manifests + Aspire publish", "platform": "Linux Docker + WSL" },
+    { "lab": "Part11_1", "method": "WAF tests + BenchmarkDotNet + k6 + dotnet-counters scripts", "platform": "cross-platform generic + Linux WSL evidence" },
+    { "lab": "Part11_2", "method": "WAF tests + AOT publish + native binary smoke + image smoke", "platform": "cross-platform generic + Linux AOT" },
+    { "lab": "Part11_3", "method": "WAF tests + Mermaid diagrams + articles + lifecycle demo", "platform": "cross-platform" },
+    { "lab": "Part12", "method": "WAF + Kafka + Mailpit Docker tests", "platform": "cross-platform generic + Linux Docker" }
+  ],
+  "manualEvidence": [
+    { "lab": "Part11_3", "method": "lifecycle grading rubric (human, no notes)", "document": "docs/summary/lifecycle-grading-rubric.md" },
+    { "lab": "Part10", "method": "Aspire AppHost 10-resource smoke + cross-service business run", "document": "docs/W8_IMPLEMENTATION.md" },
+    { "lab": "Adminer", "method": "HTTP readiness + manual table/migration inspection", "document": "scripts/w9/run-full-stack-acceptance.sh" },
+    { "lab": "RedisInsight", "method": "HTTP readiness + manual key/TTL inspection", "document": "scripts/w9/run-full-stack-acceptance.sh" }
+  ]
+}

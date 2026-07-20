@@ -22,5 +22,6 @@
     <Project Path="tests/Part11_2_NativeAotTrim.Tests/Part11_2_NativeAotTrim.Tests.csproj" />
     <Project Path="tests/Part11_3_FrameworkSource.Tests/Part11_3_FrameworkSource.Tests.csproj" />
     <Project Path="tests/Part12_ElectiveBranches.Tests/Part12_ElectiveBranches.Tests.csproj" />
+    <Project Path="tests/Part13_Summary.Tests/Part13_Summary.Tests.csproj" />
   </Folder>
 </Solution>

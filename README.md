@@ -2,7 +2,7 @@
 
 按 `C:/MyFile/ArcForges/ArchitectureDesign/ASP.NetStudy/ASP.NET-Core-net10-学习路线图.md`
 逐步实现的 **31 个实验**，每个对应路线图里的一个「步骤 N」或「第 N 部分-M」详解 md。
-已推进到 W8；完成阶段使用真实应用代码、数据库/中间件、可观测性、部署资产和集成测试，后续阶段保留可运行占位。
+已推进到 W9（全部完成）；完成阶段使用真实应用代码、数据库/中间件、可观测性、部署资产和集成测试。
 
 阶段 14（Unity 接轨附录）不涉及；本仓不重写路线图，文档保留在 ArcForges 原位。
 
@@ -15,6 +15,7 @@
 - W6：Part05_1–2，详见 [Keycloak + SPA/BFF 安全实战](docs/w6-part05-security-lab.md)
 - W7：Part06_1–Part07，详见 [消息模式、RabbitMQ 与分布式通信实战](docs/w7-messaging-distributed-lab.md)
 - W8：Part08_1–Part10，详见 [可观测性、排障、部署与 Aspire 实战](docs/W8_IMPLEMENTATION.md)
+- W9：Part11_1–Part13，详见 [性能进阶](docs/performance/w9-performance-lab.md)、[Native AOT](docs/performance/w9-aot-lab.md)、[选学支线](docs/w9-electives-lab.md)，能力索引由 `src/Part13_Summary` 提供
 
 ## 工作原理
 

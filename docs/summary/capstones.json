@@ -1,0 +1,46 @@
+{
+  "capstones": [
+    {
+      "id": "capstone-1",
+      "name": "Capstone 1: production-grade monolithic Web API",
+      "wave": "W1-W3",
+      "milestone": "single-process API with real tests",
+      "contents": [
+        "Minimal API + routing + validation",
+        "JWT authentication + FallbackPolicy + 401/403",
+        "Serilog structured logging + correlation ID + health checks",
+        "Kestrel limits + HttpClient resilience + HTTP/2",
+        "EF migration + PostgreSQL + Testcontainers + SkippableFact"
+      ]
+    },
+    {
+      "id": "capstone-2",
+      "name": "Capstone 2: modular monolith with real data layer",
+      "wave": "W4-W5",
+      "milestone": "modular monolith with enforceable boundaries",
+      "contents": [
+        "Versioned API + keyset pagination + ETag/If-Match + Idempotency-Key",
+        "OpenAPI + Scalar + Deprecation/Sunset",
+        "Catalog/Enrollment/Notices module boundaries + NetArchTest",
+        "EF Core N+1 + projection + AsSplitQuery + keyset + xmin concurrency",
+        "HybridCache + OutputCache + stampede + tag invalidation",
+        "Tenant resolution + EF10 named filters + write protection"
+      ]
+    },
+    {
+      "id": "capstone-3",
+      "name": "Capstone 3: multi-service system",
+      "wave": "W7-W8",
+      "milestone": "distributed system with observability and deployment",
+      "contents": [
+        "Gateway + Catalog + Enrollment + Notices independent processes",
+        "Three independent PostgreSQL databases",
+        "gRPC unary + server streaming internal communication",
+        "YARP gateway + JWT verification + internal identity headers",
+        "RabbitMQ + Outbox/Inbox/Saga + DLQ + retry",
+        "OpenTelemetry logs/metrics/traces + OTLP + Aspire Dashboard",
+        "Multi-stage Dockerfile + non-root chiseled + K8s + ACA + Aspire publish"
+      ]
+    }
+  ]
+}
