@@ -64,6 +64,7 @@ jobs:
       MSBUILDDISABLENODEREUSE: "1"
       CAMPUS_W7_PG: "Host=127.0.0.1;Port=5432;Database=postgres;Username=dotnet;Password=dotnet_dev"
       CAMPUS_W7_RABBITMQ: "amqp://dotnet:dotnet_dev@127.0.0.1:5672/"
+      CAMPUS_W9_PG: "Host=127.0.0.1;Port=5432;Database=postgres;Username=dotnet;Password=dotnet_dev"
 
     steps:
       - name: Checkout

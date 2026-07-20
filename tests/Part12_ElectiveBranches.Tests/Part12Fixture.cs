@@ -99,7 +99,7 @@ public sealed class Part12Fixture : IAsyncLifetime
                 .WithEnvironment("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
                 .WithEnvironment("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0")
                 .WithEnvironment("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "true")
-                .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Kafka Server started"))
+                .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(9094))
                 .Build();
             await _kafkaContainer.StartAsync();
             KafkaBootstrap = $"localhost:{_kafkaContainer.GetMappedPublicPort(9094)}";
