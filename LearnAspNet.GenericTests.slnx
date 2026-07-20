@@ -18,5 +18,6 @@
     <Project Path="tests/Part08_1_OpenTelemetry.Tests/Part08_1_OpenTelemetry.Tests.csproj" />
     <Project Path="tests/Part08_2_TroubleshootingProcess.Tests/Part08_2_TroubleshootingProcess.Tests.csproj" />
     <Project Path="tests/Part09_Deployment.Tests/Part09_Deployment.Tests.csproj" />
+    <Project Path="tests/Part11_1_PerformanceAdvanced.Tests/Part11_1_PerformanceAdvanced.Tests.csproj" />
   </Folder>
 </Solution>
