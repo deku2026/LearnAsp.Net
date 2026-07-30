@@ -8,6 +8,7 @@
     <PackageReference Include="Aspire.Hosting.PostgreSQL" />
     <PackageReference Include="Aspire.Hosting.RabbitMQ" />
     <PackageReference Include="Aspire.Hosting.Redis" />
+    <PackageReference Include="Grpc.Tools" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Part07_DistributedComm\Part07_DistributedComm.csproj" />
